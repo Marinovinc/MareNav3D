@@ -41,6 +41,12 @@
   .leaflet-container{background:#0a1a2e}
   .leaflet-control-attribution{font-size:9px}
   .depthpop{font-family:ui-monospace,monospace;font-size:13px}
+  #catchInput{display:none;left:50%;top:42%;transform:translate(-50%,-50%);padding:13px 15px;width:min(82vw,280px);z-index:1500}
+  #catchInput .t{font-size:12px;color:var(--accent);margin-bottom:6px;font-weight:600}
+  #catchInput input{width:100%;padding:9px;border-radius:7px;border:1px solid var(--line);background:#0e1b30;color:#fff;font-size:15px}
+  #catchInput .act{display:flex;gap:7px;margin-top:8px}
+  #catchInput .act button{flex:1;padding:9px;border-radius:7px;border:1px solid var(--line);cursor:pointer;font-size:13px;font-weight:600}
+  #catchSave{background:var(--accent);color:#062535;border-color:var(--accent)}#catchCancel{background:#11243c;color:var(--txt)}
 </style>
 </head>
 <body>
@@ -62,6 +68,11 @@
 
 <div id="zoneZoom" class="hud"><button id="zZoomIn">+</button><button id="zZoomOut">&minus;</button></div>
 <div id="readout" class="hud"></div>
+<div id="catchInput" class="hud">
+  <div class="t">Registra cattura</div>
+  <input id="catchNote" type="text" placeholder="specie / peso (opzionale)" maxlength="40" autocomplete="off">
+  <div class="act"><button id="catchCancel">Annulla</button><button id="catchSave">Salva</button></div>
+</div>
 
 <div id="tools" class="hud">
   <button id="btnGps">GPS</button>
@@ -110,7 +121,7 @@ async function depthAt(lat,lon){
 }
 
 // ---------- strumenti ----------
-let mode=null, routePts=[], catches=[], rulerPts=[], routeLayer=L.layerGroup().addTo(map), catchLayer=L.layerGroup().addTo(map), rulerLayer=L.layerGroup().addTo(map);
+let mode=null, pendingCatch=null, routePts=[], catches=[], rulerPts=[], routeLayer=L.layerGroup().addTo(map), catchLayer=L.layerGroup().addTo(map), rulerLayer=L.layerGroup().addTo(map);
 function readout(html){ $('readout').style.display=html?'block':'none'; if(html)$('readout').innerHTML=html; }
 function nm(a,b){const R=3440.065,d=Math.PI/180,dLat=(b[0]-a[0])*d,dLon=(b[1]-a[1])*d;
   const s=Math.sin(dLat/2)**2+Math.cos(a[0]*d)*Math.cos(b[0]*d)*Math.sin(dLon/2)**2;return R*2*Math.asin(Math.sqrt(s));}
@@ -138,6 +149,8 @@ function setMode(m){ mode=(mode===m)?null:m;
 $('btnRuler').onclick=()=>setMode('ruler');
 $('btnWp').onclick=()=>setMode('wp');
 $('btnCatch').onclick=()=>setMode('catch');
+$('catchSave').onclick=()=>{ if(pendingCatch){ catches.push({lat:pendingCatch.lat,lng:pendingCatch.lng,note:($('catchNote').value||'').slice(0,40),t:Date.now()}); drawCatches(); persist(); readout('Cattura registrata ('+catches.length+')'); } $('catchInput').style.display='none'; pendingCatch=null; };
+$('catchCancel').onclick=()=>{ $('catchInput').style.display='none'; pendingCatch=null; };
 
 map.on('click', async e=>{
   const lat=e.latlng.lat, lon=e.latlng.lng;
@@ -153,8 +166,8 @@ map.on('click', async e=>{
     $('undoWp').onclick=()=>{routePts.pop();drawRoute();persist();readout('Rotta: <b>'+routePts.length+' WP</b>, '+totNm(routePts).toFixed(2)+' nm');};
     $('clrWp').onclick=()=>{routePts=[];drawRoute();persist();readout('Rotta cancellata');};
   } else if(mode==='catch'){
-    const note=(prompt('Nota cattura (specie/peso):','')||'').slice(0,40);
-    catches.push({lat,lng:lon,note,t:Date.now()}); drawCatches(); persist(); readout('Cattura registrata ('+catches.length+')');
+    pendingCatch={lat:lat,lng:lon}; $('catchNote').value=''; $('catchInput').style.display='block';
+    try{ $('catchNote').focus(); }catch(_){}
   } else {
     // default: profondità al tocco
     const pop=L.popup({className:'depthpop'}).setLatLng(e.latlng).setContent('Leggo il fondale…').openOn(map);

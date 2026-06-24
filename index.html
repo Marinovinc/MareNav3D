@@ -33,8 +33,8 @@
   #readout{bottom:54px;left:50%;transform:translateX(-50%);padding:6px 12px;font-size:12.5px;display:none;max-width:92vw;text-align:center}
   #readout a{color:var(--accent);cursor:pointer}
   #layerBtn{top:8px;left:8px;padding:8px 10px;font-size:12px;cursor:pointer;color:var(--txt)}
-  #btnBack3d{top:8px;left:8px;padding:8px 12px;font-weight:600;font-size:13px;color:var(--txt);cursor:pointer;display:none;z-index:1001}
-  #zoneZoom{display:none;right:8px;bottom:54px;flex-direction:column;padding:5px;gap:5px}
+  #btnBack3d{top:8px;left:8px;padding:8px 12px;font-weight:600;font-size:13px;color:var(--txt);cursor:pointer;display:none;z-index:1200}
+  #zoneZoom{display:none;right:8px;bottom:54px;flex-direction:column;padding:5px;gap:5px;z-index:1200}
   #zoneZoom button{width:40px;height:36px;border-radius:8px;border:1px solid var(--line);background:#11243c;color:#fff;font-size:19px;font-weight:700;cursor:pointer}
   #loading{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:2000;background:rgba(6,18,31,.8);color:var(--accent);font-size:15px;flex-direction:column;gap:10px}
   #loading button{padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:#11243c;color:var(--txt);cursor:pointer}
@@ -341,8 +341,9 @@ function gridFromRaster(band,cols,rows,bb){ const lats=[],lons=[],zz=[];
 $('btn3d').onclick=async()=>{
   let b=map.getBounds(); let latS=b.getSouth(),latN=b.getNorth(),lonW=b.getWest(),lonE=b.getEast();
   // limita l'area 3D a ~3° centrati (per velocità) se la vista e' troppo ampia
-  const cx=(lonW+lonE)/2, cy=(latS+latN)/2, MAX=3.0;
+  const cx=(lonW+lonE)/2, cy=(latS+latN)/2, MAX=3.0, MIN=1.0;
   if(lonE-lonW>MAX){ lonW=cx-MAX/2; lonE=cx+MAX/2; } if(latN-latS>MAX){ latS=cy-MAX/2; latN=cy+MAX/2; }
+  if(lonE-lonW<MIN){ lonW=cx-MIN/2; lonE=cx+MIN/2; } if(latN-latS<MIN){ latS=cy-MIN/2; latN=cy+MIN/2; }
   latS=Math.max(30.2,latS);latN=Math.min(46,latN);lonW=Math.max(-6,lonW);lonE=Math.min(36.5,lonE);
   $('loadtxt').textContent='Carico il 3D dei fondali…'; $('loading').style.display='flex';
   try{

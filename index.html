@@ -70,6 +70,9 @@
   <div class="row"><span class="k">Fondale</span><span class="v" id="nDep">—</span></div>
   <div class="row"><span class="k">Vel.</span><span class="v" id="nSpd">—</span></div>
   <div class="row"><span class="k">Rotta</span><span class="v" id="nCog">—</span></div>
+  <div class="row"><span class="k">&rarr; WP</span><span class="v" id="nWp">—</span></div>
+  <div class="row"><span class="k">Bussola</span><span class="v" id="nBrg">—</span></div>
+  <div class="row"><span class="k">ETA</span><span class="v" id="nEta">—</span></div>
 </div>
 
 <div id="zoneZoom" class="hud"><button id="zZoomIn">+</button><button id="zZoomOut">&minus;</button></div>
@@ -95,6 +98,7 @@
   <button id="btnRuler">Righello</button>
   <button id="btnWp">Waypoint</button>
   <button id="btnRoutes">Rotte</button>
+  <button id="btnTrack">Traccia</button>
   <button id="btnCatch">Cattura</button>
   <button id="btn3d">Vedi 3D</button>
 </div>
@@ -189,7 +193,7 @@ function redrawRuler(){
   });
   updateRulerReadout();
 }
-function loadSaved(){ routePts=JSON.parse(localStorage.getItem('mnav_route')||'[]'); catches=JSON.parse(localStorage.getItem('mnav_catches')||'[]'); drawRoute(); drawCatches(); }
+function loadSaved(){ routePts=JSON.parse(localStorage.getItem('mnav_route')||'[]'); catches=JSON.parse(localStorage.getItem('mnav_catches')||'[]'); drawRoute(); drawCatches(); loadTrack(); }
 
 function setMode(m){ mode=(mode===m)?null:m;
   [['ruler','btnRuler'],['wp','btnWp'],['catch','btnCatch']].forEach(([k,id])=>$(id).classList.toggle('active',mode===k));
@@ -220,7 +224,7 @@ function renderRoutesList(){
   list.forEach(r=>{ const row=document.createElement('div'); row.style.cssText='display:flex;gap:6px;align-items:center;margin:5px 0';
     const open=document.createElement('button'); open.textContent=r.name+' ('+totNm(r.pts).toFixed(1)+' nm, '+r.pts.length+' wp)';
     open.style.cssText='flex:1;text-align:left;padding:7px 9px;border-radius:6px;border:1px solid #2c416c;background:#11243c;color:#dfeaf5;font-size:12px;cursor:pointer';
-    open.onclick=()=>{ routePts=r.pts.map(p=>({lat:p.lat,lng:p.lng})); drawRoute(); persist(); $('routesPanel').style.display='none';
+    open.onclick=()=>{ routePts=r.pts.map(p=>({lat:p.lat,lng:p.lng})); nextWpIdx=0; drawRoute(); persist(); $('routesPanel').style.display='none';
       readout('Rotta caricata: '+r.name+' ('+totNm(routePts).toFixed(2)+' nm)'); };
     const del=document.createElement('button'); del.textContent='✗';
     del.style.cssText='padding:7px 10px;border-radius:6px;border:1px solid #2c416c;background:#11243c;color:#ff6b6b;cursor:pointer';
@@ -257,20 +261,53 @@ map.on('click', async e=>{
   }
 });
 
-// ---------- GPS ----------
-let watchId=null, boatM=null, accM=null, depTimer=0;
+// ---------- GPS + navigazione + traccia ----------
+let watchId=null, boatM=null, accM=null, depTimer=0, nextWpIdx=0, track=[], trackLine=null, recording=false;
+function bearing(la1,lo1,la2,lo2){ const d=Math.PI/180,y=Math.sin((lo2-lo1)*d)*Math.cos(la2*d),
+  x=Math.cos(la1*d)*Math.sin(la2*d)-Math.sin(la1*d)*Math.cos(la2*d)*Math.cos((lo2-lo1)*d); return (Math.atan2(y,x)*180/Math.PI+360)%360; }
+function fmtEta(s){ if(!isFinite(s)||s<0) return '—'; s=Math.round(s); const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60;
+  return h? (h+'h'+String(m).padStart(2,'0')) : (m+'m'+String(ss).padStart(2,'0')+'s'); }
+function boatIcon(hd){ const has=(hd!=null&&!isNaN(hd));
+  return L.divIcon({className:'', iconSize:[24,24], iconAnchor:[12,12],
+    html: has ? '<div style="transform:rotate('+hd+'deg)"><svg width="24" height="24" viewBox="0 0 24 24"><polygon points="12,1 19,21 12,16 5,21" fill="#39ff7a" stroke="#063" stroke-width="1.5"/></svg></div>'
+              : '<div style="width:15px;height:15px;border-radius:50%;background:#39ff7a;border:2px solid #063;margin:4px"></div>' }); }
+function loadTrack(){ try{ track=JSON.parse(localStorage.getItem('mnav_track')||'[]'); }catch(e){ track=[]; }
+  if(track.length>1){ trackLine=L.polyline(track,{color:'#16e0ff',weight:3,opacity:.85}).addTo(map); } }
+function toggleTrack(){ recording=!recording; $('btnTrack').classList.toggle('active',recording);
+  if(recording){ if(watchId==null) startGps(); readout('Registrazione traccia avviata'); } else readout('Registrazione fermata'); }
+function clearTrack(){ track=[]; if(trackLine){ map.removeLayer(trackLine); trackLine=null; } localStorage.removeItem('mnav_track'); readout('Traccia cancellata'); }
+$('btnTrack').onclick=()=>toggleTrack();
 function onPos(p){
   const {latitude:lat,longitude:lon,accuracy,speed,heading}=p.coords;
   $('nLat').textContent=lat.toFixed(5); $('nLon').textContent=lon.toFixed(5);
   $('nSpd').textContent=(speed!=null&&!isNaN(speed))?((speed*1.94384).toFixed(1)+' kn'):'—';
   $('nCog').textContent=(heading!=null&&!isNaN(heading))?(Math.round(heading)+'°'):'—';
-  if(!boatM){ boatM=L.circleMarker([lat,lon],{radius:7,color:'#063',weight:2,fillColor:'#39ff7a',fillOpacity:1}).addTo(map);
+  if(!boatM){ boatM=L.marker([lat,lon],{icon:boatIcon(heading),interactive:false}).addTo(map);
     accM=L.circle([lat,lon],{radius:accuracy||30,color:'#39ff7a',weight:1,fillOpacity:.08}).addTo(map);
     map.setView([lat,lon], Math.max(map.getZoom(),11)); }
-  else { boatM.setLatLng([lat,lon]); accM.setLatLng([lat,lon]).setRadius(accuracy||30); }
+  else { boatM.setLatLng([lat,lon]); boatM.setIcon(boatIcon(heading)); accM.setLatLng([lat,lon]).setRadius(accuracy||30); }
+  // navigazione al prossimo waypoint
+  if(routePts.length){
+    if(nextWpIdx>=routePts.length) nextWpIdx=routePts.length-1;
+    let tgt=routePts[nextWpIdx], dnm=nm([lat,lon],[tgt.lat,tgt.lng]);
+    if(dnm*1852<60 && nextWpIdx<routePts.length-1){ nextWpIdx++; tgt=routePts[nextWpIdx]; dnm=nm([lat,lon],[tgt.lat,tgt.lng]); }
+    $('nWp').textContent='#'+(nextWpIdx+1)+' '+dnm.toFixed(2)+' nm';
+    $('nBrg').textContent=Math.round(bearing(lat,lon,tgt.lat,tgt.lng))+'°';
+    const sp=(speed!=null&&!isNaN(speed)&&speed>0.2)?speed:null;
+    $('nEta').textContent=sp?fmtEta(dnm*1852/sp):'—';
+  } else { $('nWp').textContent='—'; $('nBrg').textContent='—'; $('nEta').textContent='—'; }
+  // registrazione traccia reale
+  if(recording){ track.push([lat,lon]); if(!trackLine) trackLine=L.polyline(track,{color:'#16e0ff',weight:3,opacity:.85}).addTo(map); else trackLine.setLatLngs(track);
+    localStorage.setItem('mnav_track',JSON.stringify(track));
+    let td=0; for(let i=1;i<track.length;i++) td+=nm(track[i-1],track[i]);
+    readout('Traccia: <b>'+td.toFixed(2)+' nm</b> &middot; <a id="stopTrk">stop</a> &middot; <a id="clrTrk">cancella</a>');
+    const s=document.getElementById('stopTrk'); if(s) s.onclick=()=>toggleTrack();
+    const c=document.getElementById('clrTrk'); if(c) c.onclick=()=>clearTrack();
+  }
   if(Date.now()-depTimer>8000){ depTimer=Date.now(); depthAt(lat,lon).then(d=>{ $('nDep').textContent=(d==null?'—':Math.abs(Math.round(d))+' m'); }); }
 }
 function startGps(){ if(!navigator.geolocation){alert('GPS non disponibile');return;}
+  nextWpIdx=0;
   watchId=navigator.geolocation.watchPosition(onPos,e=>readout('GPS: '+(e.message||'errore')),{enableHighAccuracy:true,maximumAge:1000,timeout:15000});
   $('btnGps').classList.add('active'); $('nav').style.display='block'; }
 function stopGps(){ if(watchId!=null){navigator.geolocation.clearWatch(watchId);watchId=null;}

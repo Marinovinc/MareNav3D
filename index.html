@@ -119,16 +119,18 @@ const WCS_URL='https://ows.emodnet-bathymetry.eu/wcs?service=WCS&version=2.0.1&r
 const map=L.map('map',{zoomControl:true,attributionControl:true,worldCopyJump:true}).setView([40.0,13.0],6);
 L.control.zoom({position:'topright'}).addTo(map); map.zoomControl.remove(); // usa quello a destra
 L.control.zoom({position:'bottomright'}).addTo(map);
-// base nautica: Oceano Esri (batimetria + scandagli + nomi, funziona a tutti gli zoom) come default; Costa CARTO in alternativa
-const esriOcean=L.layerGroup([
-  L.tileLayer('https://services.arcgisonline.com/arcgis/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}',{maxZoom:18,maxNativeZoom:13,attribution:'&copy; Esri Ocean'}),
-  L.tileLayer('https://services.arcgisonline.com/arcgis/rest/services/Ocean/World_Ocean_Reference/MapServer/tile/{z}/{y}/{x}',{maxZoom:18,maxNativeZoom:13})
-]).addTo(map);
+// solo dati aperti: base costa CARTO + batimetria EMODnet (attiva solo da minZoom in su, dove rende bene) + segnalamenti OpenSeaMap
 const base=L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-  {maxZoom:18, attribution:'&copy; OpenStreetMap, &copy; CARTO'});
+  {maxZoom:18, attribution:'&copy; OpenStreetMap, &copy; CARTO'}).addTo(map);
+const EMOD_MINZOOM=7, EMOD_MAXNATIVE=9;
+const bathy=L.tileLayer.wms(WMS,{layers:'emodnet:mean_multicolour',format:'image/png',transparent:true,
+  opacity:0.75, minZoom:EMOD_MINZOOM, maxZoom:18, maxNativeZoom:EMOD_MAXNATIVE, attribution:'&copy; EMODnet Bathymetry'}).addTo(map);
 const seamark=L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; OpenSeaMap'}).addTo(map);
-L.control.layers({'Oceano (Esri)':esriOcean,'Costa (CARTO)':base},
-  {'Segnalamenti (OpenSeaMap)':seamark},{position:'topleft',collapsed:true}).addTo(map);
+L.control.layers({'Costa (CARTO)':base},
+  {'Fondali EMODnet':bathy,'Segnalamenti (OpenSeaMap)':seamark},{position:'topleft',collapsed:true}).addTo(map);
+// avviso quando lo zoom e' troppo basso per i fondali EMODnet
+function emodHint(){ if(map.getZoom()<EMOD_MINZOOM) readout('Fondali EMODnet: <b>zooma di più</b> (livello '+EMOD_MINZOOM+'+) per vederli'); }
+map.on('zoomend', ()=>{ if(map.getZoom()<EMOD_MINZOOM && !mode) emodHint(); });
 
 // ---------- profondità EMODnet (WCS, in un punto) ----------
 function fetchTO(url,ms){const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),ms);return fetch(url,{signal:ctl.signal}).finally(()=>clearTimeout(t));}

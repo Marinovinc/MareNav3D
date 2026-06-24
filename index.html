@@ -357,10 +357,12 @@ function clampCov(latS,latN,lonW,lonE){ return [Math.max(11.2,latS), Math.min(89
 function areaId(latS,latN,lonW,lonE){ return [latS,latN,lonW,lonE].map(function(v){return v.toFixed(2);}).join('_'); }
 
 const WCS_URL='https://ows.emodnet-bathymetry.eu/wcs?service=WCS&version=2.0.1&request=GetCoverage&coverageId=emodnet__mean&format=image/tiff';
+function fetchTO(url, ms){ const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(), ms);
+  return fetch(url, {signal:ctl.signal}).finally(()=>clearTimeout(t)); }
 async function fetchTile(latS,latN,lonW,lonE,maxpx){
   const sf=Math.min(maxpx/((lonE-lonW)/NATIVE_RES), maxpx/((latN-latS)/NATIVE_RES), 1).toFixed(4);
   const url=WCS_URL+'&subset=Lat('+latS+','+latN+')&subset=Long('+lonW+','+lonE+')&scalefactor='+sf;
-  const buf=await (await fetch(url)).arrayBuffer();
+  const buf=await (await fetchTO(url, 30000)).arrayBuffer();
   const tiff=await GeoTIFF.fromArrayBuffer(buf); const img=await tiff.getImage();
   return {w:img.getWidth(), h:img.getHeight(), data:(await img.readRasters())[0]};
 }

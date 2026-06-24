@@ -1,6 +1,6 @@
 // MareNav3D - service worker: precache app + zone batimetriche (offline); cache-first per CDN (globe.gl/Plotly/texture)
-// v2: zone scaricate on-demand (EMODnet) e cachate in localStorage; il SW cachea solo il guscio app + (a runtime) le CDN
-const CACHE = 'marenav3d-v2';
+// v3: HTML network-first (app sempre aggiornata online), CDN/icone cache-first; zone in localStorage
+const CACHE = 'marenav3d-v3';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'
 ];
@@ -13,12 +13,23 @@ self.addEventListener('activate', e => {
 });
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  e.respondWith(
-    caches.match(e.request, {ignoreSearch: true}).then(r =>
-      r || fetch(e.request).then(resp => {
-        try { const cp = resp.clone(); caches.open(CACHE).then(c => c.put(e.request, cp)); } catch (_) {}
-        return resp;
-      }).catch(() => caches.match('./index.html'))
-    )
-  );
+  const req = e.request;
+  const isHTML = req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html');
+  if (isHTML) {
+    // network-first: online ricevi sempre l'app aggiornata; offline ripieghi sulla cache
+    e.respondWith(
+      fetch(req).then(resp => { try { const cp = resp.clone(); caches.open(CACHE).then(c => c.put(req, cp)); } catch (_) {} return resp; })
+        .catch(() => caches.match(req, {ignoreSearch: true}).then(r => r || caches.match('./index.html')))
+    );
+  } else {
+    // cache-first per CDN/icone/asset statici
+    e.respondWith(
+      caches.match(req, {ignoreSearch: true}).then(r =>
+        r || fetch(req).then(resp => {
+          try { const cp = resp.clone(); caches.open(CACHE).then(c => c.put(req, cp)); } catch (_) {}
+          return resp;
+        }).catch(() => caches.match('./index.html'))
+      )
+    );
+  }
 });

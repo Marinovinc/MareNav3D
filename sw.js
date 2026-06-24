@@ -1,6 +1,6 @@
 // MareNav3D - service worker: precache app + zone batimetriche (offline); cache-first per CDN (globe.gl/Plotly/texture)
 // v3: HTML network-first (app sempre aggiornata online), CDN/icone cache-first; zone in localStorage
-const CACHE = 'marenav3d-v4';
+const CACHE = 'marenav3d-v5';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'
 ];
@@ -22,9 +22,11 @@ self.addEventListener('fetch', e => {
         .catch(() => caches.match(req, {ignoreSearch: true}).then(r => r || caches.match('./index.html')))
     );
   } else {
-    // cache-first per CDN/icone/asset statici
+    // cache-first per CDN/icone/asset statici. NIENTE ignoreSearch: le API WCS EMODnet hanno
+    // lo stesso path e cambiano solo nella query (il bbox) -> ignoreSearch restituiva sempre la
+    // stessa tile per qualsiasi area (3D sempre identico). Match esatto sull'URL completo.
     e.respondWith(
-      caches.match(req, {ignoreSearch: true}).then(r =>
+      caches.match(req).then(r =>
         r || fetch(req).then(resp => {
           try { const cp = resp.clone(); caches.open(CACHE).then(c => c.put(req, cp)); } catch (_) {}
           return resp;

@@ -136,6 +136,12 @@ const EMOD_MINZOOM=0, EMOD_MAXNATIVE=14;
 // EMODnet via tile XYZ CDN (pre-renderizzati, affidabili - niente rate-limit/mattonelle del WMS)
 const bathy=L.tileLayer('https://tiles.emodnet-bathymetry.eu/2020/baselayer/web_mercator/{z}/{x}/{y}.png',
   {minZoom:EMOD_MINZOOM, maxZoom:18, maxNativeZoom:EMOD_MAXNATIVE, opacity:0.97, className:'bathy-layer', attribution:'&copy; EMODnet Bathymetry'}).addTo(map);
+// profondita a colori EMODnet (mean_multicolour) fusa SOPRA il rilievo -> colore profondita + relievo.
+// Trasparente sulla terra; verificato: niente "mattonelle" su viewport largo (80 tile distinte).
+const COLORDEPTH_MINZOOM=6;
+const colorDepth=L.tileLayer.wms('https://ows.emodnet-bathymetry.eu/wms',
+  {layers:'emodnet:mean_multicolour',format:'image/png',transparent:true,version:'1.3.0',
+   minZoom:COLORDEPTH_MINZOOM,maxZoom:18,opacity:0.6,className:'colordepth-layer',attribution:'&copy; EMODnet Bathymetry'}).addTo(map);
 // ---------- Terraferma/isole: satellite EOX Sentinel-2 (aperto, CC-BY), mascherato SOLO sulla terra ----------
 // Maschera basata sulla COSTA reale dell'EMODnet (azzurro=mare -> trasparente, mostra il fondale;
 // beige=terra -> satellite). Robusto anche per terre SOTTO il livello del mare (depressioni): restano terra.
@@ -180,9 +186,9 @@ const contours=L.tileLayer.wms('https://ows.emodnet-bathymetry.eu/wms',
 function contHint(){ if(contours._map && map.getZoom()<CONT_MINZOOM && !mode && !rect3dActive)
   readout('Batimetriche: <b>zooma di più</b> (livello '+CONT_MINZOOM+'+) per vedere le isobate'); }
 map.on('zoomend', contHint);
-base.setZIndex(100); bathy.setZIndex(200); landSat.setZIndex(250); contours.setZIndex(300); seamark.setZIndex(350);
+base.setZIndex(100); bathy.setZIndex(200); colorDepth.setZIndex(220); landSat.setZIndex(250); contours.setZIndex(300); seamark.setZIndex(350);
 L.control.layers({'Costa (CARTO)':base},
-  {'Fondali EMODnet':bathy,'Terraferma (satellite)':landSat,'Batimetriche (isobate)':contours,'Segnalamenti (OpenSeaMap)':seamark},{position:'topleft',collapsed:true}).addTo(map);
+  {'Fondali EMODnet':bathy,'Profondità a colori':colorDepth,'Terraferma (satellite)':landSat,'Batimetriche (isobate)':contours,'Segnalamenti (OpenSeaMap)':seamark},{position:'topleft',collapsed:true}).addTo(map);
 
 // ---------- profondità EMODnet (WCS, in un punto) ----------
 function fetchTO(url,ms){const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),ms);return fetch(url,{signal:ctl.signal}).finally(()=>clearTimeout(t));}

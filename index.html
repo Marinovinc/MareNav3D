@@ -352,15 +352,32 @@ $('btn3d').onclick=async()=>{
     await show3D(g);
   }catch(e){ $('loading').style.display='none'; alert('3D non riuscito: '+e.message); }
 };
+function gridDepth(g, lat, lon){
+  if(lat>g.bb.latN||lat<g.bb.latS||lon<g.bb.lonW||lon>g.bb.lonE) return null;
+  const i=Math.round((g.bb.latN-lat)/((g.bb.latN-g.bb.latS)/(g.rows-1)));
+  const j=Math.round((lon-g.bb.lonW)/((g.bb.lonE-g.bb.lonW)/(g.cols-1)));
+  if(i<0||i>=g.rows||j<0||j>=g.cols) return null;
+  return g.zz[i][j];
+}
 async function show3D(g){
   const surf={type:'surface',x:g.lons,y:g.lats,z:g.zz,
     colorscale:[[0,'rgb(40,135,161)'],[0.1667,'rgb(121,167,172)'],[0.3333,'rgb(181,200,184)'],[0.5,'rgb(237,234,194)'],[0.6667,'rgb(214,189,141)'],[0.8333,'rgb(189,146,90)'],[1,'rgb(161,105,40)']],
     colorbar:{title:{text:'quota m'},x:1,thickness:10}};
-  const boat = boatM ? [{type:'scatter3d',x:[boatM.getLatLng().lng],y:[boatM.getLatLng().lat],z:[5],mode:'markers+text',
-    marker:{size:7,color:'#39ff7a',symbol:'diamond',line:{color:'#063',width:2}},text:['barca'],textposition:'top center'}] : [];
+  // rotta + barca drappeggiate sul fondale 3D (come ROTTA_A_3D)
+  const extra=[];
+  if(routePts.length){
+    const rx=[],ry=[],rz=[],rt=[];
+    routePts.forEach((p,i)=>{ const d=gridDepth(g,p.lat,p.lng); if(d!=null){ rx.push(p.lng); ry.push(p.lat); rz.push(d+15); rt.push(String(i+1)); } });
+    if(rx.length) extra.push({type:'scatter3d',x:rx,y:ry,z:rz,mode:'lines+markers+text',
+      line:{color:'#ffd54a',width:6},marker:{size:4,color:'#ffd54a'},text:rt,textposition:'top center',textfont:{color:'#ffe08a',size:11},name:'rotta'});
+  }
+  if(boatM){ const bll=boatM.getLatLng(), bd=gridDepth(g,bll.lat,bll.lng);
+    if(bd!=null) extra.push({type:'scatter3d',x:[bll.lng],y:[bll.lat],z:[bd+20],mode:'markers+text',
+      marker:{size:8,color:'#39ff7a',symbol:'diamond',line:{color:'#063',width:2}},text:['barca'],textposition:'top center',textfont:{color:'#39ff7a',size:11},name:'barca'});
+  }
   $('zone').style.display='block'; $('btnBack3d').style.display='block';
   $('zoneZoom').style.display='flex'; $('tools').style.display='none'; $('title').style.display='none';
-  await Plotly.newPlot('zone',[surf,...boat],{paper_bgcolor:'#06121f',margin:{l:0,r:0,t:0,b:0},
+  await Plotly.newPlot('zone',[surf,...extra],{paper_bgcolor:'#06121f',margin:{l:0,r:0,t:0,b:0},
     scene:{aspectmode:'manual',aspectratio:{x:2,y:2,z:0.9},camera:{eye:{x:1.4,y:-1.6,z:1.0}},
     xaxis:{title:'lon',color:'#7fa0bd'},yaxis:{title:'lat',color:'#7fa0bd'},zaxis:{title:'quota m',color:'#7fa0bd'}}},
     {displayModeBar:false,responsive:true});

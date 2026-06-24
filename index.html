@@ -43,7 +43,7 @@
   #loading{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:2000;background:rgba(6,18,31,.8);color:var(--accent);font-size:15px;flex-direction:column;gap:10px}
   #loading button{padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:#11243c;color:var(--txt);cursor:pointer}
   .leaflet-container{background:#0a1a2e}
-  .isobath-layer{filter:brightness(.3) contrast(1.7)}  /* isobate scure e leggibili sull'hillshade chiaro */
+  .isobath-layer{filter:brightness(1.6) drop-shadow(0 0 1px rgba(0,0,0,.9)) drop-shadow(0 0 1px rgba(0,0,0,.6))}  /* isobate bianche con alone scuro per leggibilita' */
   .leaflet-control-attribution{font-size:9px}
   .depthpop{font-family:ui-monospace,monospace;font-size:13px}
   #catchInput{display:none;left:50%;top:42%;transform:translate(-50%,-50%);padding:13px 15px;width:min(82vw,280px);z-index:1500}

@@ -10,299 +10,126 @@
 <meta name="theme-color" content="#06121f">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
-<title>MareNav3D — navigazione 3D</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<title>MareNav3D — carta nautica</title>
 <style>
-  :root{--bg:#06121f;--panel:rgba(10,22,38,.92);--line:#1f3650;--txt:#dfeaf5;--accent:#16e0ff;--green:#39ff7a;}
+  :root{--bg:#06121f;--panel:rgba(10,22,38,.94);--line:#1f3650;--txt:#dfeaf5;--accent:#16e0ff;--green:#39ff7a;}
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);overflow:hidden;
     font-family:system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-text-size-adjust:100%;overscroll-behavior:none}
-  #globe,#zone{position:absolute;inset:0}
-  #zone{display:none}
-  .hud{position:fixed;z-index:50;background:var(--panel);border:1px solid var(--line);border-radius:10px;
-    box-shadow:0 4px 16px rgba(0,0,0,.5);backdrop-filter:blur(3px)}
-  #title{top:8px;left:50%;transform:translateX(-50%);padding:7px 14px;font-weight:700;font-size:15px;color:#fff;letter-spacing:.3px}
-  #title small{display:block;font-weight:400;font-size:10.5px;color:#8fb0cc;text-align:center}
-  #zonelist{top:54px;left:8px;padding:9px 11px;max-width:220px}
-  #zonelist b{color:var(--accent);font-size:12px;text-transform:uppercase;letter-spacing:.4px}
-  #zonelist button{display:block;width:100%;text-align:left;margin:5px 0 0;padding:7px 9px;border-radius:7px;
-    border:1px solid var(--line);background:#11243c;color:var(--txt);font-size:13px;cursor:pointer}
-  #zonelist button:hover{background:#19324f}
-  #hint{bottom:10px;left:50%;transform:translateX(-50%);padding:6px 12px;font-size:11.5px;color:#9fc0db}
-  #btnBack{top:8px;left:8px;padding:8px 12px;font-weight:600;font-size:13px;color:var(--txt);
-    border:1px solid var(--line);background:var(--panel);border-radius:9px;cursor:pointer;display:none;z-index:60}
-  #nav{display:none;right:8px;top:8px;padding:9px 12px;width:min(72vw,240px);font-size:12.5px;line-height:1.5}
-  #nav h4{margin:0 0 5px;color:var(--accent);font-size:12px}
+  #map{position:absolute;inset:0;background:#0a1a2e}
+  #zone{position:absolute;inset:0;display:none;background:#06121f}
+  .hud{position:fixed;z-index:1000;background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    box-shadow:0 4px 16px rgba(0,0,0,.5)}
+  #title{top:8px;left:50%;transform:translateX(-50%);padding:6px 13px;font-weight:700;font-size:14px;color:#fff}
+  #title small{font-weight:400;color:#8fb0cc;font-size:10px}
+  #nav{top:8px;right:8px;padding:8px 11px;width:min(60vw,210px);font-size:12px;line-height:1.5;display:none}
+  #nav h4{margin:0 0 4px;color:var(--accent);font-size:11px;text-transform:uppercase;letter-spacing:.4px}
   #nav .row{display:flex;justify-content:space-between;gap:8px}
-  #nav .k{color:#8fb0cc}
-  #nav .v{font-family:ui-monospace,monospace;color:#fff}
-  #tools{display:none;bottom:10px;left:8px;padding:6px;gap:6px}
-  #tools button{padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:#11243c;color:var(--txt);font-size:12px;cursor:pointer}
+  #nav .k{color:#8fb0cc}#nav .v{font-family:ui-monospace,monospace;color:#fff}
+  #tools{bottom:10px;left:50%;transform:translateX(-50%);padding:6px;display:flex;gap:6px;flex-wrap:wrap;justify-content:center;max-width:96vw}
+  #tools button{padding:8px 11px;border-radius:8px;border:1px solid var(--line);background:#11243c;color:var(--txt);font-size:12.5px;cursor:pointer;-webkit-tap-highlight-color:transparent}
   #tools button.active{background:#1e3a63;border-color:var(--accent);color:#fff}
-  #loading{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:80;
-    background:rgba(6,18,31,.75);color:var(--accent);font-size:15px}
-  .flex{display:flex;align-items:center}
-  #picker{display:none;left:50%;top:50%;transform:translate(-50%,-50%);padding:14px 16px;width:min(86vw,300px);z-index:70}
-  #picker h4{margin:0 0 8px;color:var(--accent);font-size:13px}
-  #picker .coord{font-family:ui-monospace,monospace;color:#fff;font-size:13px;margin:2px 0 8px}
-  #picker label{font-size:11.5px;color:#8fb0cc}
-  #picker .sizes{display:flex;gap:6px;margin:5px 0 10px}
-  #picker .sizes button{flex:1;padding:7px 0;border-radius:7px;border:1px solid var(--line);background:#11243c;color:var(--txt);cursor:pointer;font-size:13px}
-  #picker .sizes button.sel{background:#1e3a63;border-color:var(--accent);color:#fff}
-  #picker .act{display:flex;gap:8px;margin-top:4px}
-  #picker .act button{flex:1;padding:9px 0;border-radius:8px;border:1px solid var(--line);cursor:pointer;font-size:13px;font-weight:600}
-  #pkGo{background:var(--accent);color:#062535;border-color:var(--accent)}
-  #pkCancel{background:#11243c;color:var(--txt)}
-  #customList{top:auto;bottom:42px;left:8px;padding:8px 11px;max-width:220px;display:none}
-  #customList b{color:var(--accent);font-size:11px;text-transform:uppercase;letter-spacing:.4px}
-  #customList button{display:block;width:100%;text-align:left;margin:4px 0 0;padding:6px 8px;border-radius:6px;border:1px solid var(--line);background:#11243c;color:var(--txt);font-size:12px;cursor:pointer}
-  #crosshair{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:40;pointer-events:none;color:#16e0ff;font-size:24px;text-shadow:0 0 4px #000;display:none}
-  #globeCtrl{display:none;bottom:42px;left:50%;transform:translateX(-50%);padding:6px;gap:6px}
-  #globeCtrl button{padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:#11243c;color:var(--txt);font-size:14px;font-weight:600;cursor:pointer}
-  #globeCtrl #gHere{background:#1e3a63;border-color:var(--accent);color:#fff}
+  #readout{bottom:54px;left:50%;transform:translateX(-50%);padding:6px 12px;font-size:12.5px;display:none;max-width:92vw;text-align:center}
+  #readout a{color:var(--accent);cursor:pointer}
+  #layerBtn{top:8px;left:8px;padding:8px 10px;font-size:12px;cursor:pointer;color:var(--txt)}
+  #btnBack3d{top:8px;left:8px;padding:8px 12px;font-weight:600;font-size:13px;color:var(--txt);cursor:pointer;display:none;z-index:1001}
   #zoneZoom{display:none;right:8px;bottom:54px;flex-direction:column;padding:5px;gap:5px}
   #zoneZoom button{width:40px;height:36px;border-radius:8px;border:1px solid var(--line);background:#11243c;color:#fff;font-size:19px;font-weight:700;cursor:pointer}
+  #loading{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:2000;background:rgba(6,18,31,.8);color:var(--accent);font-size:15px;flex-direction:column;gap:10px}
+  #loading button{padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:#11243c;color:var(--txt);cursor:pointer}
+  .leaflet-container{background:#0a1a2e}
+  .leaflet-control-attribution{font-size:9px}
+  .depthpop{font-family:ui-monospace,monospace;font-size:13px}
 </style>
 </head>
 <body>
-<div id="globe"></div>
+<div id="map"></div>
 <div id="zone"></div>
 
-<div id="title" class="hud">MareNav3D<small>tocca una zona o un mare del Mediterraneo</small></div>
-<button id="btnBack" class="hud">&#8592; Mappamondo</button>
-
-<div id="zonelist" class="hud">
-  <b>Zone del Mediterraneo</b>
-  <div id="zoneButtons"></div>
-</div>
-
-<div id="customList" class="hud"><b>Le mie aree (offline)</b><div id="customButtons"></div></div>
-
-<div id="picker" class="hud">
-  <h4>Scarica area fondali</h4>
-  <div class="coord" id="pkCoord">—</div>
-  <label>Dimensione del riquadro</label>
-  <div class="sizes" id="pkSizes">
-    <button data-s="1">1&deg;</button><button data-s="2" class="sel">2&deg;</button><button data-s="3">3&deg;</button>
-  </div>
-  <div class="act"><button id="pkCancel">Annulla</button><button id="pkGo">Scarica e apri</button></div>
-</div>
+<div id="title" class="hud">MareNav3D<br><small>carta nautica &middot; fondali EMODnet</small></div>
+<button id="layerBtn" class="hud">Fondali: ON</button>
+<button id="btnBack3d" class="hud">&#8592; Carta</button>
 
 <div id="nav" class="hud">
-  <h4>Dati di navigazione</h4>
+  <h4>Navigazione</h4>
   <div class="row"><span class="k">Lat</span><span class="v" id="nLat">—</span></div>
   <div class="row"><span class="k">Lon</span><span class="v" id="nLon">—</span></div>
-  <div class="row"><span class="k">Fondale qui</span><span class="v" id="nDep">—</span></div>
-  <div class="row"><span class="k">Velocità</span><span class="v" id="nSpd">—</span></div>
-  <div class="row"><span class="k">Rotta (COG)</span><span class="v" id="nCog">—</span></div>
-  <div class="row"><span class="k">GPS</span><span class="v" id="nGps">spento</span></div>
+  <div class="row"><span class="k">Fondale</span><span class="v" id="nDep">—</span></div>
+  <div class="row"><span class="k">Vel.</span><span class="v" id="nSpd">—</span></div>
+  <div class="row"><span class="k">Rotta</span><span class="v" id="nCog">—</span></div>
 </div>
 
-<div id="tools" class="hud flex">
+<div id="zoneZoom" class="hud"><button id="zZoomIn">+</button><button id="zZoomOut">&minus;</button></div>
+<div id="readout" class="hud"></div>
+
+<div id="tools" class="hud">
   <button id="btnGps">GPS</button>
-  <button id="btnRuler" title="In arrivo">Righello</button>
-  <button id="btnWp" title="In arrivo">Waypoint</button>
-  <button id="btnCatch" title="In arrivo">Cattura</button>
+  <button id="btnRuler">Righello</button>
+  <button id="btnWp">Waypoint</button>
+  <button id="btnCatch">Cattura</button>
+  <button id="btn3d">Vedi 3D</button>
 </div>
 
-<div id="crosshair">&#9678;</div>
-<div id="globeCtrl" class="hud flex">
-  <button id="gZoomOut" title="Zoom indietro">&minus;</button>
-  <button id="gZoomIn" title="Zoom avanti">+</button>
-  <button id="gHere" title="Scarica i fondali al centro del globo">&#9678; Area qui</button>
-</div>
-<div id="zoneZoom" class="hud flex">
-  <button id="zZoomIn" title="Zoom avanti">+</button>
-  <button id="zZoomOut" title="Zoom indietro">&minus;</button>
-</div>
+<div id="loading"><div id="loadtxt">Carico…</div><button id="loadCancel" style="display:none">Annulla</button></div>
 
-<div id="hint" class="hud">Ruota il globo e centra un punto di mare, poi <b>&#9678; Area qui</b> &middot; oppure tocca una zona predefinita</div>
-<div id="loading">Carico i fondali…</div>
-
-<script src="https://unpkg.com/globe.gl"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js"></script>
 <script>
 "use strict";
-const $ = id => document.getElementById(id);
-let MANIFEST = null, world = null, curZone = null, gridCache = {};
+const $=id=>document.getElementById(id);
+const NATIVE_RES=0.0010416666666666667;
+const WMS='https://ows.emodnet-bathymetry.eu/wms';
+const WCS_URL='https://ows.emodnet-bathymetry.eu/wcs?service=WCS&version=2.0.1&request=GetCoverage&coverageId=emodnet__mean&format=image/tiff';
 
-// Zone ufficiali METEOMAR del Mediterraneo (box DERIVATI dalla cartina di riferimento - DA VERIFICARE).
-// 1-15 = acque italiane (download in una richiesta); 16-20 = grandi/lontane (download a tasselli).
-const MED_ZONES = [
-  {key:'z1', n:1,  nome:'Mar di Corsica',                 latS:41.5, latN:43.0, lonW:9.3,  lonE:11.0},
-  {key:'z2', n:2,  nome:'Mar di Sardegna',                latS:38.8, latN:41.3, lonW:6.0,  lonE:8.5},
-  {key:'z3', n:3,  nome:'Canale di Sardegna',             latS:37.5, latN:39.0, lonW:8.0,  lonE:10.0},
-  {key:'z4', n:4,  nome:'Mar Ligure',                     latS:43.0, latN:44.3, lonW:7.5,  lonE:10.0},
-  {key:'z5', n:5,  nome:'Tirreno settentrionale',         latS:41.3, latN:43.0, lonW:9.5,  lonE:11.5},
-  {key:'z6', n:6,  nome:'Tirreno centrale W',             latS:40.0, latN:41.5, lonW:10.5, lonE:12.3},
-  {key:'z7', n:7,  nome:'Tirreno centrale E',             latS:40.0, latN:41.5, lonW:12.3, lonE:14.5},
-  {key:'z8', n:8,  nome:'Tirreno meridionale W',          latS:38.5, latN:40.0, lonW:11.5, lonE:13.0},
-  {key:'z9', n:9,  nome:'Tirreno meridionale E',          latS:38.5, latN:40.0, lonW:13.0, lonE:15.5},
-  {key:'z10',n:10, nome:'Stretto di Sicilia',             latS:36.0, latN:38.0, lonW:11.0, lonE:15.0},
-  {key:'z11',n:11, nome:'Ionio meridionale',              latS:35.0, latN:37.5, lonW:15.0, lonE:19.5},
-  {key:'z12',n:12, nome:'Ionio settentrionale',           latS:37.5, latN:40.0, lonW:15.0, lonE:19.0},
-  {key:'z13',n:13, nome:'Adriatico meridionale',          latS:40.0, latN:42.0, lonW:15.5, lonE:19.5},
-  {key:'z14',n:14, nome:'Adriatico centrale',             latS:42.0, latN:44.0, lonW:13.0, lonE:16.5},
-  {key:'z15',n:15, nome:'Adriatico settentrionale',       latS:44.0, latN:45.8, lonW:12.0, lonE:14.0},
-  {key:'z16',n:16, nome:'Med. occ. - Alboran',            latS:35.0, latN:37.0, lonW:-5.5, lonE:0.0},
-  {key:'z17',n:17, nome:'Med. occ. - Baleari',            latS:37.0, latN:41.0, lonW:0.0,  lonE:6.0},
-  {key:'z18',n:18, nome:'Mar Libico',                     latS:31.5, latN:35.0, lonW:15.0, lonE:25.0},
-  {key:'z19',n:19, nome:'Med. or. - Egeo e sud Creta',    latS:33.0, latN:40.5, lonW:20.0, lonE:27.0},
-  {key:'z20',n:20, nome:'Med. or. - Mar di Levante',      latS:31.0, latN:37.0, lonW:27.0, lonE:36.0},
-];
+// ---------- CARTA 2D (Leaflet) ----------
+const map=L.map('map',{zoomControl:true,attributionControl:true,worldCopyJump:true}).setView([40.0,13.0],6);
+L.control.zoom({position:'topright'}).addTo(map); map.zoomControl.remove(); // usa quello a destra
+L.control.zoom({position:'bottomright'}).addTo(map);
+const base=L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+  {maxZoom:18, attribution:'&copy; OpenStreetMap, &copy; CARTO'}).addTo(map);
+const bathy=L.tileLayer.wms(WMS,{layers:'emodnet:mean_multicolour',format:'image/png',transparent:true,
+  opacity:0.65, maxZoom:18, attribution:'&copy; EMODnet Bathymetry'}).addTo(map);
+let bathyOn=true;
+$('layerBtn').onclick=()=>{ bathyOn=!bathyOn; bathyOn?bathy.addTo(map):map.removeLayer(bathy); $('layerBtn').textContent='Fondali: '+(bathyOn?'ON':'OFF'); };
 
-// ---------- GLOBO ----------
-async function initGlobe(){
-  const zones = MED_ZONES.map(z=>({ ...z, lat:(z.latN+z.latS)/2, lng:(z.lonW+z.lonE)/2 }));
-  world = Globe()(document.getElementById('globe'))
-    .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
-    .bumpImageUrl('https://unpkg.com/three-globe/example/img/earth-topology.png')
-    .backgroundColor('#06121f')
-    .pointsData(zones).pointLat('lat').pointLng('lng').pointColor(()=> '#16e0ff')
-    .pointAltitude(0.02).pointRadius(0.45).pointLabel(z=>z.n+' '+z.nome)
-    .onPointClick(z=>openZone(z.key))
-    .onGlobeClick(onGlobeClick);
-  world.pointOfView({lat:40, lng:14, altitude:1.7}, 0);
-  renderCustomList();
-  $('globeCtrl').style.display='flex'; $('crosshair').style.display='block';
-  // lista zone (più facile da toccare su mobile)
-  const wrap = $('zoneButtons'); wrap.innerHTML='';
-  zones.forEach(z=>{ const b=document.createElement('button'); b.textContent=z.n+' - '+z.nome;
-    b.onclick=()=>openZone(z.key); wrap.appendChild(b); });
-  // auto-resize
-  const fit=()=>{ if(world){ world.width(innerWidth).height(innerHeight); } };
-  addEventListener('resize', fit); fit();
+// ---------- profondità EMODnet (WCS, in un punto) ----------
+function fetchTO(url,ms){const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),ms);return fetch(url,{signal:ctl.signal}).finally(()=>clearTimeout(t));}
+async function fetchTile(latS,latN,lonW,lonE,maxpx){
+  const sf=Math.min(maxpx/((lonE-lonW)/NATIVE_RES), maxpx/((latN-latS)/NATIVE_RES),1).toFixed(4);
+  const url=WCS_URL+'&subset=Lat('+latS+','+latN+')&subset=Long('+lonW+','+lonE+')&scalefactor='+sf;
+  const buf=await(await fetchTO(url,30000)).arrayBuffer();
+  const tiff=await GeoTIFF.fromArrayBuffer(buf);const img=await tiff.getImage();
+  return {w:img.getWidth(),h:img.getHeight(),data:(await img.readRasters())[0]};
+}
+async function depthAt(lat,lon){
+  try{ const t=await fetchTile(lat-0.03,lat+0.03,lon-0.03,lon+0.03,8);
+    const v=t.data[Math.floor(t.h/2)*t.w+Math.floor(t.w/2)];
+    return (v>-12000&&v<200)?v:null; }catch(e){ return null; }
 }
 
-// ---------- CARICAMENTO GRIGLIA BATIMETRICA ----------
-async function loadGrid(z){
-  if(gridCache[z.key]) return gridCache[z.key];
-  const buf = await fetch('data/'+z.key+'.bin').then(r=>r.arrayBuffer());
-  const raw = new Int16Array(buf);                 // riga 0 = Nord, row-major
-  const rows=z.rows, cols=z.cols, nd=z.nodata;
-  const lats=[], lons=[], zz=[];
-  const dlat=(z.latN-z.latS)/(rows-1), dlon=(z.lonE-z.lonW)/(cols-1);
-  for(let i=0;i<rows;i++) lats.push(+(z.latN - i*dlat).toFixed(5));
-  for(let j=0;j<cols;j++) lons.push(+(z.lonW + j*dlon).toFixed(5));
-  for(let i=0;i<rows;i++){ const row=new Array(cols);
-    for(let j=0;j<cols;j++){ const v=raw[i*cols+j]; row[j]=(v===nd)?null:v; }
-    zz.push(row); }
-  const g={lats,lons,zz,rows,cols,dlat,dlon,z};
-  gridCache[z.key]=g; return g;
-}
-function depthAt(g, lat, lon){
-  if(lat>g.z.latN||lat<g.z.latS||lon<g.z.lonW||lon>g.z.lonE) return null;
-  const i=Math.round((g.z.latN-lat)/g.dlat), j=Math.round((lon-g.z.lonW)/g.dlon);
-  if(i<0||i>=g.rows||j<0||j>=g.cols) return null;
-  return g.zz[i][j];
-}
+// ---------- strumenti ----------
+let mode=null, routePts=[], catches=[], rulerPts=[], routeLayer=L.layerGroup().addTo(map), catchLayer=L.layerGroup().addTo(map), rulerLayer=L.layerGroup().addTo(map);
+function readout(html){ $('readout').style.display=html?'block':'none'; if(html)$('readout').innerHTML=html; }
+function nm(a,b){const R=3440.065,d=Math.PI/180,dLat=(b[0]-a[0])*d,dLon=(b[1]-a[1])*d;
+  const s=Math.sin(dLat/2)**2+Math.cos(a[0]*d)*Math.cos(b[0]*d)*Math.sin(dLon/2)**2;return R*2*Math.asin(Math.sqrt(s));}
+function totNm(p){let t=0;for(let i=1;i<p.length;i++)t+=nm([p[i-1].lat,p[i-1].lng],[p[i].lat,p[i].lng]);return t;}
+function persist(){ localStorage.setItem('mnav_route',JSON.stringify(routePts)); localStorage.setItem('mnav_catches',JSON.stringify(catches)); }
+function drawRoute(){ routeLayer.clearLayers();
+  if(routePts.length){ L.polyline(routePts.map(p=>[p.lat,p.lng]),{color:'#ffd54a',weight:3}).addTo(routeLayer);
+    routePts.forEach((p,i)=>L.circleMarker([p.lat,p.lng],{radius:5,color:'#ffd54a',fillColor:'#3a2a00',fillOpacity:1})
+      .bindTooltip(String(i+1),{permanent:true,direction:'top',className:'depthpop'}).addTo(routeLayer)); } }
+function drawCatches(){ catchLayer.clearLayers();
+  catches.forEach(c=>L.marker([c.lat,c.lng]).addTo(catchLayer).bindPopup('🎣 '+(c.note||'cattura'))); }
+function drawRuler(){ rulerLayer.clearLayers();
+  if(rulerPts.length){ L.polyline(rulerPts.map(p=>[p.lat,p.lng]),{color:'#ff3b6b',weight:3,dashArray:'6 5'}).addTo(rulerLayer);
+    rulerPts.forEach(p=>L.circleMarker([p.lat,p.lng],{radius:4,color:'#ff3b6b'}).addTo(rulerLayer)); } }
+function loadSaved(){ routePts=JSON.parse(localStorage.getItem('mnav_route')||'[]'); catches=JSON.parse(localStorage.getItem('mnav_catches')||'[]'); drawRoute(); drawCatches(); }
 
-// ---------- VISTA ZONA (Plotly 3D) — tracce a indici fissi ----------
-const SURF=0, ROUTE=1, CATCH=2, RULER=3, BOAT=4;   // indici tracce
-const AUXZ=5;                                       // quota marker sul pelo dell'acqua
-let mode=null;                                      // null|'ruler'|'wp'|'catch'
-let routePts=[], catches=[], rulerPts=[];
-
-function emptyAux(){
-  return [
-    {type:'scatter3d',x:[],y:[],z:[],mode:'lines+markers+text',name:'rotta',
-      line:{color:'#ffd54a',width:5},marker:{size:4,color:'#ffd54a'},text:[],textposition:'top center',textfont:{color:'#ffe08a',size:10}},
-    {type:'scatter3d',x:[],y:[],z:[],mode:'markers+text',name:'catture',
-      marker:{size:7,color:'#ff7a1a',symbol:'diamond-open',line:{width:2}},text:[],textposition:'top center',textfont:{color:'#ffb05a',size:10}},
-    {type:'scatter3d',x:[],y:[],z:[],mode:'lines+markers',name:'righello',
-      line:{color:'#ff3b6b',width:5,dash:'dot'},marker:{size:5,color:'#ff3b6b'}},
-    {type:'scatter3d',x:[],y:[],z:[],mode:'markers+text',name:'barca',
-      marker:{size:8,color:'#39ff7a',symbol:'diamond',line:{color:'#063',width:2}},text:[],textposition:'top center',textfont:{color:'#39ff7a',size:11}}
-  ];
-}
-async function openZoneView(g, nome){
-  $('loading').textContent='Carico i fondali…'; $('loading').style.display='flex';
-  curZone = g;
-  const surf = {type:'surface', x:g.lons, y:g.lats, z:g.zz,
-    colorscale:[[0,'#08233f'],[.35,'#0e4a73'],[.6,'#1f8fb0'],[.8,'#57c08a'],[.93,'#caa24a'],[1,'#9a3a1c']],
-    colorbar:{title:{text:'m'},x:1,thickness:10}, showscale:true, lighting:{ambient:.8}};
-  const layout = {paper_bgcolor:'#06121f', margin:{l:0,r:0,t:0,b:0},
-    scene:{aspectmode:'manual', aspectratio:{x:2,y:2,z:0.5},
-      xaxis:{title:'lon',color:'#7fa0bd',gridcolor:'#16304a'},
-      yaxis:{title:'lat',color:'#7fa0bd',gridcolor:'#16304a'},
-      zaxis:{title:'quota m',color:'#7fa0bd',gridcolor:'#16304a'},
-      camera:{eye:{x:1.4,y:-1.6,z:1.0}}}};
-  await Plotly.newPlot('zone',[surf,...emptyAux()],layout,{displayModeBar:false,responsive:true});
-  const saved = JSON.parse(localStorage.getItem('marenav_'+g.z.key)||'{}');
-  routePts = saved.route||[]; catches = saved.catches||[]; rulerPts=[]; mode=null;
-  drawRoute(); drawCatches(); drawRuler();
-  document.getElementById('zone').on('plotly_click', onZoneClick);
-  $('globe').style.display='none'; $('zone').style.display='block';
-  $('btnBack').style.display='block'; $('nav').style.display='block'; $('tools').style.display='flex';
-  $('zonelist').style.display='none'; $('hint').style.display='none'; $('picker').style.display='none'; $('customList').style.display='none';
-  $('globeCtrl').style.display='none'; $('crosshair').style.display='none'; $('zoneZoom').style.display='flex';
-  $('title').innerHTML = nome + '<small>cartina 3D dei fondali (EMODnet)</small>';
-  $('loading').style.display='none'; setMode(null);
-}
-async function openZone(key){
-  const z = MED_ZONES.find(x=>x.key===key); if(!z) return;
-  await openBBox(z.latS, z.latN, z.lonW, z.lonE, z.n+' - '+z.nome);
-}
-function backToGlobe(){
-  $('zone').style.display='none'; $('globe').style.display='block';
-  $('btnBack').style.display='none'; $('nav').style.display='none'; $('tools').style.display='none';
-  $('zonelist').style.display='block'; $('hint').style.display='block';
-  $('title').innerHTML = 'MareNav3D<small>tocca una zona o un mare del Mediterraneo</small>';
-  $('globeCtrl').style.display='flex'; $('crosshair').style.display='block'; $('zoneZoom').style.display='none';
-  stopGps(); curZone=null; setMode(null); renderCustomList();
-}
-$('btnBack').onclick = backToGlobe;
-
-// ---------- distanze ----------
-function nm(a,b){ const R=3440.065,d=Math.PI/180; const dLat=(b[0]-a[0])*d,dLon=(b[1]-a[1])*d;
-  const s=Math.sin(dLat/2)**2+Math.cos(a[0]*d)*Math.cos(b[0]*d)*Math.sin(dLon/2)**2; return R*2*Math.asin(Math.sqrt(s)); }
-function totalNm(pts){ let t=0; for(let i=1;i<pts.length;i++) t+=nm([pts[i-1].lat,pts[i-1].lon],[pts[i].lat,pts[i].lon]); return t; }
-
-// ---------- readout ----------
-let readoutEl=null;
-function readout(html){ if(!readoutEl){ readoutEl=document.createElement('div'); readoutEl.className='hud';
-  readoutEl.style.cssText='bottom:54px;left:50%;transform:translateX(-50%);padding:7px 13px;font-size:12.5px;z-index:55'; document.body.appendChild(readoutEl); }
-  readoutEl.style.display=html?'block':'none'; if(html) readoutEl.innerHTML=html; }
-
-// ---------- disegno tracce ----------
-function drawRoute(){
-  Plotly.restyle('zone',{x:[routePts.map(p=>p.lon)],y:[routePts.map(p=>p.lat)],z:[routePts.map(()=>AUXZ)],
-    text:[routePts.map((p,i)=>String(i+1))]},[ROUTE]);
-}
-function drawCatches(){
-  Plotly.restyle('zone',{x:[catches.map(p=>p.lon)],y:[catches.map(p=>p.lat)],z:[catches.map(()=>AUXZ)],
-    text:[catches.map(p=>'🎣'+(p.note?(' '+p.note):''))]},[CATCH]);
-}
-function drawRuler(){
-  Plotly.restyle('zone',{x:[rulerPts.map(p=>p.lon)],y:[rulerPts.map(p=>p.lat)],z:[rulerPts.map(()=>AUXZ)]},[RULER]);
-}
-function persist(){ const key=curZone&&curZone.z.key; if(!key) return;
-  localStorage.setItem('marenav_'+key, JSON.stringify({route:routePts,catches:catches})); }
-
-// ---------- click sulla superficie per-strumento ----------
-function onZoneClick(ev){
-  if(!mode || !ev||!ev.points||!ev.points[0]) return;
-  const pt=ev.points[0]; const lat=pt.y, lon=pt.x; if(lat==null||lon==null) return;
-  const dep=curZone?depthAt(curZone,lat,lon):null;
-  if(mode==='ruler'){
-    if(rulerPts.length>=2) rulerPts=[];
-    rulerPts.push({lat,lon}); drawRuler();
-    if(rulerPts.length===2){ const d=nm([rulerPts[0].lat,rulerPts[0].lon],[rulerPts[1].lat,rulerPts[1].lon]);
-      readout('Righello: <b>'+d.toFixed(2)+' nm</b> ('+(d*1.852).toFixed(2)+' km) &middot; tocca per ricominciare'); }
-    else readout('Righello: tocca il <b>secondo</b> punto');
-  } else if(mode==='wp'){
-    routePts.push({lat,lon,dep}); drawRoute(); persist();
-    readout('Rotta: <b>'+routePts.length+' WP</b>, totale <b>'+totalNm(routePts).toFixed(2)+' nm</b> &middot; <a id="undoWp" style="color:#16e0ff">annulla</a> &middot; <a id="clrWp" style="color:#ff6b6b">cancella</a>');
-    $('undoWp').onclick=()=>{ routePts.pop(); drawRoute(); persist(); readout('Rotta: <b>'+routePts.length+' WP</b>, totale <b>'+totalNm(routePts).toFixed(2)+' nm</b>'); };
-    $('clrWp').onclick=()=>{ routePts=[]; drawRoute(); persist(); readout('Rotta cancellata'); };
-  } else if(mode==='catch'){
-    const note=(prompt('Nota cattura (specie/peso):','')||'').slice(0,40);
-    catches.push({lat,lon,dep,note,t:Date.now()}); drawCatches(); persist();
-    readout('Cattura registrata'+(dep!=null?(' a '+Math.abs(Math.round(dep))+' m'):'')+' &middot; totale '+catches.length);
-  }
-}
-function setMode(m){ mode = (mode===m)?null:m;
+function setMode(m){ mode=(mode===m)?null:m;
   [['ruler','btnRuler'],['wp','btnWp'],['catch','btnCatch']].forEach(([k,id])=>$(id).classList.toggle('active',mode===k));
+  map.getContainer().style.cursor = mode?'crosshair':'';
   if(mode==='ruler'){ rulerPts=[]; drawRuler(); readout('Righello: tocca il <b>primo</b> punto'); }
   else if(mode==='wp') readout('Waypoint: tocca per aggiungere punti alla rotta');
   else if(mode==='catch') readout('Cattura: tocca il punto della cattura');
@@ -312,167 +139,109 @@ $('btnRuler').onclick=()=>setMode('ruler');
 $('btnWp').onclick=()=>setMode('wp');
 $('btnCatch').onclick=()=>setMode('catch');
 
-// ---------- BARCA GPS ----------
-let watchId=null;
-function setBoat(lat,lon){ if(!curZone) return;
-  Plotly.restyle('zone',{x:[[lon]],y:[[lat]],z:[[AUXZ]],text:[['barca']]},[BOAT]); }
+map.on('click', async e=>{
+  const lat=e.latlng.lat, lon=e.latlng.lng;
+  if(mode==='ruler'){
+    if(rulerPts.length>=2) rulerPts=[];
+    rulerPts.push({lat,lng:lon}); drawRuler();
+    if(rulerPts.length===2){ const d=nm([rulerPts[0].lat,rulerPts[0].lng],[rulerPts[1].lat,rulerPts[1].lng]);
+      readout('Distanza: <b>'+d.toFixed(2)+' nm</b> ('+(d*1.852).toFixed(2)+' km) &middot; tocca per ricominciare'); }
+    else readout('Righello: tocca il <b>secondo</b> punto');
+  } else if(mode==='wp'){
+    routePts.push({lat,lng:lon}); drawRoute(); persist();
+    readout('Rotta: <b>'+routePts.length+' WP</b>, '+totNm(routePts).toFixed(2)+' nm &middot; <a id="undoWp">annulla</a> &middot; <a id="clrWp">cancella</a>');
+    $('undoWp').onclick=()=>{routePts.pop();drawRoute();persist();readout('Rotta: <b>'+routePts.length+' WP</b>, '+totNm(routePts).toFixed(2)+' nm');};
+    $('clrWp').onclick=()=>{routePts=[];drawRoute();persist();readout('Rotta cancellata');};
+  } else if(mode==='catch'){
+    const note=(prompt('Nota cattura (specie/peso):','')||'').slice(0,40);
+    catches.push({lat,lng:lon,note,t:Date.now()}); drawCatches(); persist(); readout('Cattura registrata ('+catches.length+')');
+  } else {
+    // default: profondità al tocco
+    const pop=L.popup({className:'depthpop'}).setLatLng(e.latlng).setContent('Leggo il fondale…').openOn(map);
+    const d=await depthAt(lat,lon);
+    pop.setContent(d==null?('Nessun dato qui<br><small>'+lat.toFixed(4)+', '+lon.toFixed(4)+'</small>')
+      :('<b>'+Math.abs(Math.round(d))+' m</b><br><small>'+lat.toFixed(4)+', '+lon.toFixed(4)+'</small>'));
+  }
+});
+
+// ---------- GPS ----------
+let watchId=null, boatM=null, accM=null, depTimer=0;
 function onPos(p){
-  const {latitude:lat,longitude:lon,speed,heading}=p.coords;
+  const {latitude:lat,longitude:lon,accuracy,speed,heading}=p.coords;
   $('nLat').textContent=lat.toFixed(5); $('nLon').textContent=lon.toFixed(5);
-  const d = curZone?depthAt(curZone,lat,lon):null;
-  $('nDep').textContent = d==null?'fuori zona':(Math.abs(Math.round(d))+' m');
-  $('nSpd').textContent = (speed!=null&&!isNaN(speed))?((speed*1.94384).toFixed(1)+' kn'):'—';
-  $('nCog').textContent = (heading!=null&&!isNaN(heading))?(Math.round(heading)+'°'):'—';
-  if(curZone) setBoat(lat,lon);
+  $('nSpd').textContent=(speed!=null&&!isNaN(speed))?((speed*1.94384).toFixed(1)+' kn'):'—';
+  $('nCog').textContent=(heading!=null&&!isNaN(heading))?(Math.round(heading)+'°'):'—';
+  if(!boatM){ boatM=L.circleMarker([lat,lon],{radius:7,color:'#063',weight:2,fillColor:'#39ff7a',fillOpacity:1}).addTo(map);
+    accM=L.circle([lat,lon],{radius:accuracy||30,color:'#39ff7a',weight:1,fillOpacity:.08}).addTo(map);
+    map.setView([lat,lon], Math.max(map.getZoom(),11)); }
+  else { boatM.setLatLng([lat,lon]); accM.setLatLng([lat,lon]).setRadius(accuracy||30); }
+  if(Date.now()-depTimer>8000){ depTimer=Date.now(); depthAt(lat,lon).then(d=>{ $('nDep').textContent=(d==null?'—':Math.abs(Math.round(d))+' m'); }); }
 }
-function startGps(){
-  if(!navigator.geolocation){ $('nGps').textContent='non disponibile'; return; }
-  watchId=navigator.geolocation.watchPosition(onPos, e=>{$('nGps').textContent=(e.message||'errore');},
-    {enableHighAccuracy:true, maximumAge:1000, timeout:15000});
-  $('nGps').textContent='attivo'; $('btnGps').classList.add('active');
-}
+function startGps(){ if(!navigator.geolocation){alert('GPS non disponibile');return;}
+  watchId=navigator.geolocation.watchPosition(onPos,e=>readout('GPS: '+(e.message||'errore')),{enableHighAccuracy:true,maximumAge:1000,timeout:15000});
+  $('btnGps').classList.add('active'); $('nav').style.display='block'; }
 function stopGps(){ if(watchId!=null){navigator.geolocation.clearWatch(watchId);watchId=null;}
-  $('nGps').textContent='spento'; $('btnGps').classList.remove('active');
-  if(curZone) Plotly.restyle('zone',{x:[[]],y:[[]],z:[[]],text:[[]]},[BOAT]); }
+  $('btnGps').classList.remove('active'); if(boatM){map.removeLayer(boatM);map.removeLayer(accM);boatM=null;} $('nav').style.display='none'; }
 $('btnGps').onclick=()=>{ watchId==null?startGps():stopGps(); };
 
-// ---------- RETTANGOLO LIBERO: scelta area sul globo, download EMODnet, parse, cache offline ----------
-const NATIVE_RES = 0.0010416666666666667;
-let pickCenter=null, pickSize=2;
-
-function onGlobeClick(coords){
-  if(!coords) return;
-  pickCenter={lat:coords.lat, lon:coords.lng};
-  $('pkCoord').textContent = coords.lat.toFixed(3)+' N   '+coords.lng.toFixed(3)+' E';
-  $('picker').style.display='block';
+// ---------- VISTA 3D dell'area inquadrata (riuso Plotly) ----------
+async function fetchGridSingle(latS,latN,lonW,lonE){ const t=await fetchTile(latS,latN,lonW,lonE,300);
+  return gridFromRaster(t.data,t.w,t.h,{latS,latN,lonW,lonE}); }
+async function fetchGridTiled(latS,latN,lonW,lonE){
+  const dlon=lonE-lonW,dlat=latN-latS,res=0.04,cols=Math.min(420,Math.round(dlon/res)),rows=Math.min(420,Math.round(dlat/res));
+  const band=new Float32Array(rows*cols).fill(NaN); const TILE=3.0,nLon=Math.ceil(dlon/TILE),nLat=Math.ceil(dlat/TILE),tiles=[];
+  for(let a=0;a<nLat;a++)for(let o=0;o<nLon;o++){ const tS=latS+a*dlat/nLat,tN=latS+(a+1)*dlat/nLat,tW=lonW+o*dlon/nLon,tE=lonW+(o+1)*dlon/nLon;
+    try{const t=await fetchTile(tS,tN,tW,tE,200);tiles.push({tS,tN,tW,tE,w:t.w,h:t.h,data:t.data});}catch(e){} }
+  for(let i=0;i<rows;i++){const lat=latN-i*(dlat/(rows-1));for(let j=0;j<cols;j++){const lon=lonW+j*(dlon/(cols-1));
+    for(const t of tiles){ if(lat<=t.tN&&lat>=t.tS&&lon>=t.tW&&lon<=t.tE){
+      const ti=Math.max(0,Math.min(t.h-1,Math.round((t.tN-lat)/((t.tN-t.tS)/(t.h-1)))));
+      const tj=Math.max(0,Math.min(t.w-1,Math.round((lon-t.tW)/((t.tE-t.tW)/(t.w-1)))));
+      const v=t.data[ti*t.w+tj];band[i*cols+j]=(v>-12000&&v<200)?v:NaN;break; } } } }
+  return gridFromRaster(band,cols,rows,{latS,latN,lonW,lonE});
 }
-document.querySelectorAll('#pkSizes button').forEach(function(btn){
-  btn.onclick=function(){ pickSize=+btn.dataset.s;
-    document.querySelectorAll('#pkSizes button').forEach(function(b){ b.classList.toggle('sel', b===btn); }); };
-});
-$('pkCancel').onclick=function(){ $('picker').style.display='none'; pickCenter=null; };
-$('pkGo').onclick=function(){ if(pickCenter) downloadArea(pickCenter.lat, pickCenter.lon, pickSize); };
-
-function clampCov(latS,latN,lonW,lonE){ return [Math.max(11.2,latS), Math.min(89,latN), Math.max(-70,lonW), Math.min(42.9,lonE)]; }
-function areaId(latS,latN,lonW,lonE){ return [latS,latN,lonW,lonE].map(function(v){return v.toFixed(2);}).join('_'); }
-
-const WCS_URL='https://ows.emodnet-bathymetry.eu/wcs?service=WCS&version=2.0.1&request=GetCoverage&coverageId=emodnet__mean&format=image/tiff';
-function fetchTO(url, ms){ const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(), ms);
-  return fetch(url, {signal:ctl.signal}).finally(()=>clearTimeout(t)); }
-async function fetchTile(latS,latN,lonW,lonE,maxpx){
-  const sf=Math.min(maxpx/((lonE-lonW)/NATIVE_RES), maxpx/((latN-latS)/NATIVE_RES), 1).toFixed(4);
-  const url=WCS_URL+'&subset=Lat('+latS+','+latN+')&subset=Long('+lonW+','+lonE+')&scalefactor='+sf;
-  const buf=await (await fetchTO(url, 30000)).arrayBuffer();
-  const tiff=await GeoTIFF.fromArrayBuffer(buf); const img=await tiff.getImage();
-  return {w:img.getWidth(), h:img.getHeight(), data:(await img.readRasters())[0]};
+function gridFromRaster(band,cols,rows,bb){ const lats=[],lons=[],zz=[];
+  const dlat=(bb.latN-bb.latS)/(rows-1),dlon=(bb.lonE-bb.lonW)/(cols-1);
+  for(let i=0;i<rows;i++)lats.push(+(bb.latN-i*dlat).toFixed(5));
+  for(let j=0;j<cols;j++)lons.push(+(bb.lonW+j*dlon).toFixed(5));
+  for(let i=0;i<rows;i++){const row=new Array(cols);for(let j=0;j<cols;j++){const v=band[i*cols+j];row[j]=(v>-12000&&v<200)?v:null;}zz.push(row);}
+  return {lats,lons,zz,rows,cols,bb};
 }
-async function fetchGridSingle(latS,latN,lonW,lonE,id){
-  const t=await fetchTile(latS,latN,lonW,lonE,300);
-  return gridFromRaster(t.data, t.w, t.h, {latS:latS,latN:latN,lonW:lonW,lonE:lonE,id:id});
-}
-async function fetchGridTiled(latS,latN,lonW,lonE,id){
-  const dlon=lonE-lonW, dlat=latN-latS, res=0.04;
-  const cols=Math.min(420,Math.round(dlon/res)), rows=Math.min(420,Math.round(dlat/res));
-  const band=new Float32Array(rows*cols); band.fill(NaN);
-  const TILE=3.0, nLon=Math.ceil(dlon/TILE), nLat=Math.ceil(dlat/TILE), tiles=[];
-  for(let a=0;a<nLat;a++) for(let o=0;o<nLon;o++){
-    const tS=latS+a*dlat/nLat, tN=latS+(a+1)*dlat/nLat, tW=lonW+o*dlon/nLon, tE=lonW+(o+1)*dlon/nLon;
-    try{ const t=await fetchTile(tS,tN,tW,tE,200); tiles.push({tS:tS,tN:tN,tW:tW,tE:tE,w:t.w,h:t.h,data:t.data}); }
-    catch(e){ /* tassello fuori copertura: salta */ }
-  }
-  for(let i=0;i<rows;i++){ const lat=latN-i*(dlat/(rows-1));
-    for(let j=0;j<cols;j++){ const lon=lonW+j*(dlon/(cols-1));
-      for(let k=0;k<tiles.length;k++){ const t=tiles[k];
-        if(lat<=t.tN&&lat>=t.tS&&lon>=t.tW&&lon<=t.tE){
-          const ti=Math.max(0,Math.min(t.h-1,Math.round((t.tN-lat)/((t.tN-t.tS)/(t.h-1)))));
-          const tj=Math.max(0,Math.min(t.w-1,Math.round((lon-t.tW)/((t.tE-t.tW)/(t.w-1)))));
-          const v=t.data[ti*t.w+tj]; band[i*cols+j]=(v>-12000&&v<200)?v:NaN; break; } } } }
-  return gridFromRaster(band, cols, rows, {latS:latS,latN:latN,lonW:lonW,lonE:lonE,id:id});
-}
-async function getZoneGrid(latS,latN,lonW,lonE,id){
-  const area=(lonE-lonW)*(latN-latS);
-  return area<=12 ? await fetchGridSingle(latS,latN,lonW,lonE,id) : await fetchGridTiled(latS,latN,lonW,lonE,id);
-}
-async function openBBox(latS,latN,lonW,lonE,nome){
-  const id=areaId(latS,latN,lonW,lonE);
-  $('picker').style.display='none';
-  let g=loadCustomFromCache(id);
-  if(!g){
-    if(!window.GeoTIFF){ alert('Libreria mappe non disponibile (offline?). Apri online la prima volta per scaricare la zona.'); return; }
-    const big=((lonE-lonW)*(latN-latS))>12;
-    $('loading').textContent = big ? 'Scarico i fondali (a tasselli)...' : 'Scarico i fondali...'; $('loading').style.display='flex';
-    try{
-      g=await getZoneGrid(latS,latN,lonW,lonE,id);
-      let sea=0; for(let i=0;i<g.zz.length;i++) for(let j=0;j<g.zz[i].length;j++){ const v=g.zz[i][j]; if(v!=null&&v<0) sea++; }
-      if(sea<20){ $('loading').style.display='none'; alert('Zona senza dati di fondale (terra o fuori EMODnet).'); return; }
-      saveCustomToCache(id,g,nome);
-    }catch(e){ $('loading').style.display='none'; alert('Download non riuscito: '+e.message+'. Offline: puoi aprire solo zone gia scaricate.'); return; }
-  }
-  await openZoneView(g, nome);
-}
-async function downloadArea(latC, lonC, size){
-  const half=size/2; const c=clampCov(latC-half, latC+half, lonC-half, lonC+half);
-  await openBBox(c[0], c[1], c[2], c[3], 'Area '+latC.toFixed(2)+'N '+lonC.toFixed(2)+'E');
-}
-
-function gridFromRaster(band, cols, rows, bb){
-  const lats=[],lons=[],zz=[];
-  const dlat=(bb.latN-bb.latS)/(rows-1), dlon=(bb.lonE-bb.lonW)/(cols-1);
-  for(let i=0;i<rows;i++) lats.push(+(bb.latN - i*dlat).toFixed(5));
-  for(let j=0;j<cols;j++) lons.push(+(bb.lonW + j*dlon).toFixed(5));
-  for(let i=0;i<rows;i++){ const row=new Array(cols);
-    for(let j=0;j<cols;j++){ const v=band[i*cols+j]; row[j]=(v>-12000 && v<200)? v : null; } zz.push(row); }
-  return {lats:lats,lons:lons,zz:zz,rows:rows,cols:cols,dlat:dlat,dlon:dlon,
-    z:{latN:bb.latN,latS:bb.latS,lonW:bb.lonW,lonE:bb.lonE,rows:rows,cols:cols,nodata:32767,key:'custom_'+bb.id}};
-}
-
-function u8ToB64(u8){ let s=''; const C=0x8000; for(let i=0;i<u8.length;i+=C) s+=String.fromCharCode.apply(null, u8.subarray(i,i+C)); return btoa(s); }
-function b64ToU8(b64){ const bin=atob(b64); const u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i); return u8; }
-function saveCustomToCache(id, g, nome){
-  const rows=g.rows, cols=g.cols, arr=new Int16Array(rows*cols);
-  for(let i=0;i<rows;i++) for(let j=0;j<cols;j++){ const v=g.zz[i][j]; arr[i*cols+j]=(v==null)?32767:Math.max(-32766,Math.min(32766,Math.round(v))); }
-  const rec={bbox:{latN:g.z.latN,latS:g.z.latS,lonW:g.z.lonW,lonE:g.z.lonE}, rows:rows, cols:cols,
-    nome:nome, b64:u8ToB64(new Uint8Array(arr.buffer))};
+$('btn3d').onclick=async()=>{
+  let b=map.getBounds(); let latS=b.getSouth(),latN=b.getNorth(),lonW=b.getWest(),lonE=b.getEast();
+  // limita l'area 3D a ~3° centrati (per velocità) se la vista e' troppo ampia
+  const cx=(lonW+lonE)/2, cy=(latS+latN)/2, MAX=3.0;
+  if(lonE-lonW>MAX){ lonW=cx-MAX/2; lonE=cx+MAX/2; } if(latN-latS>MAX){ latS=cy-MAX/2; latN=cy+MAX/2; }
+  latS=Math.max(30.2,latS);latN=Math.min(46,latN);lonW=Math.max(-6,lonW);lonE=Math.min(36.5,lonE);
+  $('loadtxt').textContent='Carico il 3D dei fondali…'; $('loading').style.display='flex';
   try{
-    localStorage.setItem('marenav_cg_'+id, JSON.stringify(rec));
-    let list=JSON.parse(localStorage.getItem('marenav_customs')||'[]').filter(function(x){return x.id!==id;});
-    list.unshift({id:id, nome:rec.nome});
-    while(list.length>6){ const d=list.pop(); localStorage.removeItem('marenav_cg_'+d.id); }
-    localStorage.setItem('marenav_customs', JSON.stringify(list));
-  }catch(e){}
-  renderCustomList();
+    const area=(lonE-lonW)*(latN-latS);
+    const g= area<=12 ? await fetchGridSingle(latS,latN,lonW,lonE) : await fetchGridTiled(latS,latN,lonW,lonE);
+    let sea=0; g.zz.forEach(r=>r.forEach(v=>{if(v!=null&&v<0)sea++;}));
+    if(sea<20){ $('loading').style.display='none'; alert('Area senza fondali. Inquadra del mare.'); return; }
+    await show3D(g);
+  }catch(e){ $('loading').style.display='none'; alert('3D non riuscito: '+e.message); }
+};
+async function show3D(g){
+  const surf={type:'surface',x:g.lons,y:g.lats,z:g.zz,
+    colorscale:[[0,'#08233f'],[.35,'#0e4a73'],[.6,'#1f8fb0'],[.8,'#57c08a'],[.93,'#caa24a'],[1,'#9a3a1c']],
+    colorbar:{title:{text:'m'},x:1,thickness:10},lighting:{ambient:.8}};
+  const boat = boatM ? [{type:'scatter3d',x:[boatM.getLatLng().lng],y:[boatM.getLatLng().lat],z:[5],mode:'markers+text',
+    marker:{size:7,color:'#39ff7a',symbol:'diamond',line:{color:'#063',width:2}},text:['barca'],textposition:'top center'}] : [];
+  await Plotly.newPlot('zone',[surf,...boat],{paper_bgcolor:'#06121f',margin:{l:0,r:0,t:0,b:0},
+    scene:{aspectmode:'manual',aspectratio:{x:2,y:2,z:0.5},camera:{eye:{x:1.4,y:-1.6,z:1.0}},
+    xaxis:{title:'lon',color:'#7fa0bd'},yaxis:{title:'lat',color:'#7fa0bd'},zaxis:{title:'quota m',color:'#7fa0bd'}}},
+    {displayModeBar:false,responsive:true});
+  $('loading').style.display='none'; $('zone').style.display='block'; $('btnBack3d').style.display='block';
+  $('zoneZoom').style.display='flex'; $('tools').style.display='none'; $('title').style.display='none';
 }
-function loadCustomFromCache(id){
-  const raw=localStorage.getItem('marenav_cg_'+id); if(!raw) return null;
-  const rec=JSON.parse(raw), arr=new Int16Array(b64ToU8(rec.b64).buffer);
-  const band=new Float32Array(arr.length);
-  for(let k=0;k<arr.length;k++) band[k]=(arr[k]===32767)?NaN:arr[k];
-  return gridFromRaster(band, rec.cols, rec.rows, {latN:rec.bbox.latN,latS:rec.bbox.latS,lonW:rec.bbox.lonW,lonE:rec.bbox.lonE,id:id});
-}
-function renderCustomList(){
-  const list=JSON.parse(localStorage.getItem('marenav_customs')||'[]');
-  const wrap=$('customButtons'); if(!wrap) return; wrap.innerHTML='';
-  const onGlobe = getComputedStyle($('globe')).display!=='none';
-  $('customList').style.display = (list.length && onGlobe)?'block':'none';
-  list.forEach(function(it){ const b=document.createElement('button'); b.textContent='📍 '+it.nome;
-    b.onclick=function(){ const g=loadCustomFromCache(it.id); if(g) openZoneView(g,it.nome); };
-    wrap.appendChild(b); });
-}
-// ---------- zoom globo + "Area qui" + zoom cartina 3D ----------
-function globeZoom(f){ if(!world) return; const v=world.pointOfView();
-  world.pointOfView({altitude:Math.max(0.25,Math.min(3.5, v.altitude*f))}, 300); }
-$('gZoomIn').onclick=function(){ globeZoom(0.7); };
-$('gZoomOut').onclick=function(){ globeZoom(1.4); };
-$('gHere').onclick=function(){ if(!world) return; const v=world.pointOfView(); onGlobeClick({lat:v.lat, lng:v.lng}); };
-function zoneZoom(f){ const g=document.getElementById('zone'); if(!g||!g._fullLayout||!g._fullLayout.scene) return;
-  const cam=g._fullLayout.scene.camera, e=cam.eye, c=cam.center||{x:0,y:0,z:0};
-  Plotly.relayout('zone',{'scene.camera.eye':{x:c.x+(e.x-c.x)*f, y:c.y+(e.y-c.y)*f, z:c.z+(e.z-c.z)*f}}); }
-$('zZoomIn').onclick=function(){ zoneZoom(0.8); };
-$('zZoomOut').onclick=function(){ zoneZoom(1.25); };
+$('btnBack3d').onclick=()=>{ $('zone').style.display='none'; $('btnBack3d').style.display='none';
+  $('zoneZoom').style.display='none'; $('tools').style.display='flex'; $('title').style.display='block'; };
+function zoneZoom(f){ const z=$('zone'); if(!z._fullLayout||!z._fullLayout.scene)return; const c=z._fullLayout.scene.camera.center||{x:0,y:0,z:0}, e=z._fullLayout.scene.camera.eye;
+  Plotly.relayout('zone',{'scene.camera.eye':{x:c.x+(e.x-c.x)*f,y:c.y+(e.y-c.y)*f,z:c.z+(e.z-c.z)*f}}); }
+$('zZoomIn').onclick=()=>zoneZoom(0.8); $('zZoomOut').onclick=()=>zoneZoom(1.25);
 
-window.MN={downloadArea:downloadArea, renderCustomList:renderCustomList};   // hook per test/automazione
-
-initGlobe().catch(e=>{ $('hint').textContent='Errore init: '+e.message; });
+loadSaved();
+window.MN={map:map, get mode(){return mode;}};   // hook test/automazione
 </script>
 <script>if('serviceWorker' in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}</script>
 </body>

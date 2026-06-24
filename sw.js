@@ -1,6 +1,6 @@
 // MareNav3D - service worker: precache app + zone batimetriche (offline); cache-first per CDN (globe.gl/Plotly/texture)
 // v3: HTML network-first (app sempre aggiornata online), CDN/icone cache-first; zone in localStorage
-const CACHE = 'marenav3d-v3';
+const CACHE = 'marenav3d-v4';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'
 ];

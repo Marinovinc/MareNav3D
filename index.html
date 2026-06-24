@@ -36,6 +36,10 @@
   #btnBack3d{top:8px;left:8px;padding:8px 12px;font-weight:600;font-size:13px;color:var(--txt);cursor:pointer;display:none;z-index:1200}
   #zoneZoom{display:none;right:8px;bottom:54px;flex-direction:column;padding:5px;gap:5px;z-index:1200}
   #zoneZoom button{width:40px;height:36px;border-radius:8px;border:1px solid var(--line);background:#11243c;color:#fff;font-size:19px;font-weight:700;cursor:pointer}
+  #planesCtl{display:none;top:8px;right:8px;z-index:1200;padding:8px 10px;font-size:12px;color:var(--txt);flex-direction:column;gap:5px;align-items:flex-start}
+  #planesCtl label{display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600}
+  #planesCtl input[type=number]{width:54px;background:#11243c;border:1px solid var(--line);color:#fff;border-radius:6px;padding:3px 5px;font-size:12px}
+  #planesCtl #planesStepWrap{color:#9fc0dd}
   #loading{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:2000;background:rgba(6,18,31,.8);color:var(--accent);font-size:15px;flex-direction:column;gap:10px}
   #loading button{padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:#11243c;color:var(--txt);cursor:pointer}
   .leaflet-container{background:#0a1a2e}
@@ -76,6 +80,10 @@
 </div>
 
 <div id="zoneZoom" class="hud"><button id="zZoomIn">+</button><button id="zZoomOut">&minus;</button></div>
+<div id="planesCtl" class="hud">
+  <label><input type="checkbox" id="planesOn"> Piani profondità</label>
+  <span id="planesStepWrap">ogni <input type="number" id="planesStep" value="500" min="50" step="50"> m</span>
+</div>
 <div id="readout" class="hud"></div>
 <div id="catchInput" class="hud">
   <div class="t">Registra cattura</div>
@@ -392,13 +400,29 @@ function gridDepth(g, lat, lon){
 }
 function fmtLat(v){ return Math.abs(v).toFixed(4)+'° '+(v>=0?'N':'S'); }
 function fmtLon(v){ return Math.abs(v).toFixed(4)+'° '+(v>=0?'E':'W'); }
+let cur3d=null;   // stato 3D corrente per ridisegnare i piani senza riscaricare
+function buildPlanes(){
+  if(!cur3d || !$('planesOn').checked) return [];
+  const step=Math.max(50,parseInt($('planesStep').value,10)||500), bb=cur3d.bb, tr=[];
+  for(let d=step; d<=cur3d.maxD; d+=step){ const z=-d;
+    tr.push({type:'surface',x:[bb.lonW,bb.lonE],y:[bb.latS,bb.latN],z:[[z,z],[z,z]],
+      showscale:false,opacity:0.13,colorscale:[[0,'#16e0ff'],[1,'#16e0ff']],hoverinfo:'skip',name:'-'+d+' m'});
+    tr.push({type:'scatter3d',x:[bb.lonW],y:[bb.latN],z:[z],mode:'text',text:['-'+d+' m'],
+      textposition:'middle right',textfont:{color:'#8df0ff',size:10},hoverinfo:'skip',showlegend:false});
+  }
+  return tr;
+}
+function render3DPlanes(){ if(cur3d) Plotly.react('zone',[...cur3d.base,...buildPlanes()],cur3d.layout,{displayModeBar:false,responsive:true}); }
 async function show3D(g){
-  // profondità positiva (m) + coordinate geografiche per l'hover (non x/y/z grezzi)
-  const absDepth=g.zz.map(r=>r.map(v=>v==null?null:Math.abs(Math.round(v))));
+  // colore = profondità POSITIVA in metri: la scala laterale si adatta al fondale mostrato
+  // (cmin 0 = superficie, cmax = fondale piu' profondo dell'area) e coincide coi colori
+  const depthPos=g.zz.map(r=>r.map(v=>v==null?null:Math.max(0,Math.round(-v))));
+  let maxD=0; depthPos.forEach(r=>r.forEach(v=>{ if(v!=null&&v>maxD)maxD=v; })); if(maxD<=0)maxD=100;
   const surf={type:'surface',x:g.lons,y:g.lats,z:g.zz,
+    surfacecolor:depthPos, cmin:0, cmax:maxD, reversescale:true,
     colorscale:[[0,'rgb(40,135,161)'],[0.1667,'rgb(121,167,172)'],[0.3333,'rgb(181,200,184)'],[0.5,'rgb(237,234,194)'],[0.6667,'rgb(214,189,141)'],[0.8333,'rgb(189,146,90)'],[1,'rgb(161,105,40)']],
-    colorbar:{title:{text:'quota m'},x:1,thickness:10},
-    customdata:absDepth,
+    colorbar:{title:{text:'prof. m'},x:1,thickness:10},
+    customdata:depthPos,
     hovertemplate:'Profondità <b>%{customdata} m</b><br>Lat %{y:.4f}°  ·  Lon %{x:.4f}°<extra></extra>'};
   // rotta + barca drappeggiate sul fondale 3D (come ROTTA_A_3D)
   const extra=[];
@@ -426,15 +450,18 @@ async function show3D(g){
     }
   }
   $('zone').style.display='block'; $('btnBack3d').style.display='block';
-  $('zoneZoom').style.display='flex'; $('tools').style.display='none'; $('title').style.display='none';
-  await Plotly.newPlot('zone',[surf,...extra],{paper_bgcolor:'#06121f',margin:{l:0,r:0,t:0,b:0},
+  $('zoneZoom').style.display='flex'; $('planesCtl').style.display='flex'; $('tools').style.display='none'; $('title').style.display='none';
+  const layout={paper_bgcolor:'#06121f',margin:{l:0,r:0,t:0,b:0},showlegend:false,
     scene:{aspectmode:'manual',aspectratio:{x:2,y:2,z:0.9},camera:{eye:{x:1.4,y:-1.6,z:1.0}},
-    xaxis:{title:'lon',color:'#7fa0bd'},yaxis:{title:'lat',color:'#7fa0bd'},zaxis:{title:'quota m',color:'#7fa0bd'}}},
-    {displayModeBar:false,responsive:true});
+    xaxis:{title:'lon',color:'#7fa0bd'},yaxis:{title:'lat',color:'#7fa0bd'},zaxis:{title:'quota m',color:'#7fa0bd'}}};
+  cur3d={ base:[surf,...extra], layout:layout, bb:g.bb, maxD:maxD };
+  await Plotly.newPlot('zone',[...cur3d.base,...buildPlanes()],layout,{displayModeBar:false,responsive:true});
   $('loading').style.display='none';
 }
 $('btnBack3d').onclick=()=>{ $('zone').style.display='none'; $('btnBack3d').style.display='none';
-  $('zoneZoom').style.display='none'; $('tools').style.display='flex'; $('title').style.display='block'; };
+  $('zoneZoom').style.display='none'; $('planesCtl').style.display='none'; $('tools').style.display='flex'; $('title').style.display='block'; };
+$('planesOn').onchange=render3DPlanes;
+$('planesStep').oninput=()=>{ if($('planesOn').checked) render3DPlanes(); };
 function zoneZoom(f){ const z=$('zone'); if(!z._fullLayout||!z._fullLayout.scene)return; const c=z._fullLayout.scene.camera.center||{x:0,y:0,z:0}, e=z._fullLayout.scene.camera.eye;
   Plotly.relayout('zone',{'scene.camera.eye':{x:c.x+(e.x-c.x)*f,y:c.y+(e.y-c.y)*f,z:c.z+(e.z-c.z)*f}}); }
 $('zZoomIn').onclick=()=>zoneZoom(0.8); $('zZoomOut').onclick=()=>zoneZoom(1.25);

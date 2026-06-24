@@ -132,7 +132,7 @@ L.control.zoom({position:'bottomright'}).addTo(map);
 // solo dati aperti: base costa CARTO + batimetria EMODnet (attiva solo da minZoom in su, dove rende bene) + segnalamenti OpenSeaMap
 const base=L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
   {maxZoom:18, attribution:'&copy; OpenStreetMap, &copy; CARTO'}).addTo(map);
-const EMOD_MINZOOM=0, EMOD_MAXNATIVE=11;
+const EMOD_MINZOOM=0, EMOD_MAXNATIVE=14;
 // EMODnet via tile XYZ CDN (pre-renderizzati, affidabili - niente rate-limit/mattonelle del WMS)
 const bathy=L.tileLayer('https://tiles.emodnet-bathymetry.eu/2020/baselayer/web_mercator/{z}/{x}/{y}.png',
   {minZoom:EMOD_MINZOOM, maxZoom:18, maxNativeZoom:EMOD_MAXNATIVE, opacity:0.97, className:'bathy-layer', attribution:'&copy; EMODnet Bathymetry'}).addTo(map);

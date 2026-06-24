@@ -101,7 +101,7 @@ L.control.zoom({position:'bottomright'}).addTo(map);
 const base=L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
   {maxZoom:18, attribution:'&copy; OpenStreetMap, &copy; CARTO'}).addTo(map);
 const bathy=L.tileLayer.wms(WMS,{layers:'emodnet:mean_multicolour',format:'image/png',transparent:true,
-  opacity:0.65, maxZoom:18, attribution:'&copy; EMODnet Bathymetry'}).addTo(map);
+  opacity:0.65, maxZoom:18, maxNativeZoom:8, attribution:'&copy; EMODnet Bathymetry'}).addTo(map);
 let bathyOn=true;
 $('layerBtn').onclick=()=>{ bathyOn=!bathyOn; bathyOn?bathy.addTo(map):map.removeLayer(bathy); $('layerBtn').textContent='Fondali: '+(bathyOn?'ON':'OFF'); };
 
@@ -121,16 +121,27 @@ async function depthAt(lat,lon){
 }
 
 // ---------- strumenti ----------
-let mode=null, pendingCatch=null, routePts=[], catches=[], rulerPts=[], rulerLine=null, routeLayer=L.layerGroup().addTo(map), catchLayer=L.layerGroup().addTo(map), rulerLayer=L.layerGroup().addTo(map);
+let mode=null, pendingCatch=null, routePts=[], catches=[], rulerPts=[], rulerLine=null, routeLine=null, routeLayer=L.layerGroup().addTo(map), catchLayer=L.layerGroup().addTo(map), rulerLayer=L.layerGroup().addTo(map);
 function readout(html){ $('readout').style.display=html?'block':'none'; if(html)$('readout').innerHTML=html; }
 function nm(a,b){const R=3440.065,d=Math.PI/180,dLat=(b[0]-a[0])*d,dLon=(b[1]-a[1])*d;
   const s=Math.sin(dLat/2)**2+Math.cos(a[0]*d)*Math.cos(b[0]*d)*Math.sin(dLon/2)**2;return R*2*Math.asin(Math.sqrt(s));}
 function totNm(p){let t=0;for(let i=1;i<p.length;i++)t+=nm([p[i-1].lat,p[i-1].lng],[p[i].lat,p[i].lng]);return t;}
 function persist(){ localStorage.setItem('mnav_route',JSON.stringify(routePts)); localStorage.setItem('mnav_catches',JSON.stringify(catches)); }
-function drawRoute(){ routeLayer.clearLayers();
-  if(routePts.length){ L.polyline(routePts.map(p=>[p.lat,p.lng]),{color:'#ffd54a',weight:3}).addTo(routeLayer);
-    routePts.forEach((p,i)=>L.circleMarker([p.lat,p.lng],{radius:5,color:'#ffd54a',fillColor:'#3a2a00',fillOpacity:1})
-      .bindTooltip(String(i+1),{permanent:true,direction:'top',className:'depthpop'}).addTo(routeLayer)); } }
+function drawRoute(){
+  routeLayer.clearLayers(); routeLine=null;
+  if(routePts.length>=2) routeLine=L.polyline(routePts.map(p=>[p.lat,p.lng]),{color:'#ffd54a',weight:3}).addTo(routeLayer);
+  routePts.forEach((p,i)=>{
+    const m=L.marker([p.lat,p.lng],{draggable:true, keyboard:false, icon:L.divIcon({className:'',
+      html:'<div style="width:18px;height:18px;border-radius:50%;background:#ffd54a;border:2px solid #3a2a00;box-shadow:0 0 3px #000;color:#3a2a00;font:700 11px/18px system-ui;text-align:center">'+(i+1)+'</div>',iconSize:[18,18],iconAnchor:[9,9]})}).addTo(routeLayer);
+    m.on('drag', e=>{ const ll=e.target.getLatLng(); routePts[i]={lat:ll.lat,lng:ll.lng}; if(routeLine) routeLine.setLatLngs(routePts.map(q=>[q.lat,q.lng])); });
+    m.on('dragend', ()=>{ persist(); drawRoute(); if(mode==='wp') readout('Rotta: <b>'+routePts.length+' WP</b>, '+totNm(routePts).toFixed(2)+' nm'); });
+    m.on('click', ev=>{ L.DomEvent.stop(ev);
+      L.popup({offset:[0,-7]}).setLatLng(m.getLatLng())
+        .setContent('<button id="rmWp" style="padding:6px 10px;border:1px solid #2c416c;background:#11243c;color:#fff;border-radius:7px;cursor:pointer;font-size:12px">Elimina waypoint</button>').openOn(map);
+      setTimeout(()=>{ const btn=document.getElementById('rmWp'); if(btn) btn.onclick=()=>{ routePts.splice(i,1); map.closePopup(); persist(); drawRoute(); if(mode==='wp') readout('Rotta: <b>'+routePts.length+' WP</b>, '+totNm(routePts).toFixed(2)+' nm'); }; },0);
+    });
+  });
+}
 function drawCatches(){ catchLayer.clearLayers();
   catches.forEach(c=>L.marker([c.lat,c.lng]).addTo(catchLayer).bindPopup('🎣 '+(c.note||'cattura'))); }
 function rulerTotal(){ let t=0; for(let i=1;i<rulerPts.length;i++) t+=nm([rulerPts[i-1].lat,rulerPts[i-1].lng],[rulerPts[i].lat,rulerPts[i].lng]); return t; }
@@ -270,7 +281,7 @@ function zoneZoom(f){ const z=$('zone'); if(!z._fullLayout||!z._fullLayout.scene
 $('zZoomIn').onclick=()=>zoneZoom(0.8); $('zZoomOut').onclick=()=>zoneZoom(1.25);
 
 loadSaved();
-window.MN={map:map, get mode(){return mode;}, get ruler(){return rulerPts;}};   // hook test/automazione
+window.MN={map:map, get mode(){return mode;}, get ruler(){return rulerPts;}, get route(){return routePts;}};   // hook test/automazione
 </script>
 <script>if('serviceWorker' in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}</script>
 </body>

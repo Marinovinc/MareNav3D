@@ -121,7 +121,7 @@ async function depthAt(lat,lon){
 }
 
 // ---------- strumenti ----------
-let mode=null, pendingCatch=null, routePts=[], catches=[], rulerPts=[], routeLayer=L.layerGroup().addTo(map), catchLayer=L.layerGroup().addTo(map), rulerLayer=L.layerGroup().addTo(map);
+let mode=null, pendingCatch=null, routePts=[], catches=[], rulerPts=[], rulerLine=null, routeLayer=L.layerGroup().addTo(map), catchLayer=L.layerGroup().addTo(map), rulerLayer=L.layerGroup().addTo(map);
 function readout(html){ $('readout').style.display=html?'block':'none'; if(html)$('readout').innerHTML=html; }
 function nm(a,b){const R=3440.065,d=Math.PI/180,dLat=(b[0]-a[0])*d,dLon=(b[1]-a[1])*d;
   const s=Math.sin(dLat/2)**2+Math.cos(a[0]*d)*Math.cos(b[0]*d)*Math.sin(dLon/2)**2;return R*2*Math.asin(Math.sqrt(s));}
@@ -133,15 +133,35 @@ function drawRoute(){ routeLayer.clearLayers();
       .bindTooltip(String(i+1),{permanent:true,direction:'top',className:'depthpop'}).addTo(routeLayer)); } }
 function drawCatches(){ catchLayer.clearLayers();
   catches.forEach(c=>L.marker([c.lat,c.lng]).addTo(catchLayer).bindPopup('🎣 '+(c.note||'cattura'))); }
-function drawRuler(){ rulerLayer.clearLayers();
-  if(rulerPts.length){ L.polyline(rulerPts.map(p=>[p.lat,p.lng]),{color:'#ff3b6b',weight:3,dashArray:'6 5'}).addTo(rulerLayer);
-    rulerPts.forEach(p=>L.circleMarker([p.lat,p.lng],{radius:4,color:'#ff3b6b'}).addTo(rulerLayer)); } }
+function rulerTotal(){ let t=0; for(let i=1;i<rulerPts.length;i++) t+=nm([rulerPts[i-1].lat,rulerPts[i-1].lng],[rulerPts[i].lat,rulerPts[i].lng]); return t; }
+function updateRulerReadout(){ if(mode!=='ruler') return;
+  if(rulerPts.length<2){ readout(rulerPts.length? 'Righello: tocca per aggiungere punti &middot; <a id="clrRul">cancella</a>' : 'Righello: tocca il <b>primo</b> punto'); }
+  else { const t=rulerTotal(); readout('Righello: <b>'+t.toFixed(2)+' nm</b> ('+(t*1.852).toFixed(2)+' km) &middot; '+rulerPts.length+' punti &middot; trascina o tocca un punto &middot; <a id="clrRul">cancella</a>'); }
+  const c=document.getElementById('clrRul'); if(c) c.onclick=()=>{ rulerPts=[]; redrawRuler(); };
+}
+function redrawRuler(){
+  rulerLayer.clearLayers(); rulerLine=null;
+  if(rulerPts.length>=2) rulerLine=L.polyline(rulerPts.map(p=>[p.lat,p.lng]),{color:'#ff3b6b',weight:3,dashArray:'6 5'}).addTo(rulerLayer);
+  rulerPts.forEach((p,i)=>{
+    const m=L.marker([p.lat,p.lng],{draggable:true, keyboard:false, icon:L.divIcon({className:'',
+      html:'<div style="width:15px;height:15px;border-radius:50%;background:#ff3b6b;border:2px solid #fff;box-shadow:0 0 3px #000"></div>',iconSize:[15,15],iconAnchor:[8,8]})}).addTo(rulerLayer);
+    m.on('drag', e=>{ const ll=e.target.getLatLng(); rulerPts[i]={lat:ll.lat,lng:ll.lng};
+      if(rulerLine) rulerLine.setLatLngs(rulerPts.map(q=>[q.lat,q.lng])); updateRulerReadout(); });
+    m.on('dragend', ()=> redrawRuler());
+    m.on('click', ev=>{ L.DomEvent.stop(ev);
+      L.popup({offset:[0,-6]}).setLatLng(m.getLatLng())
+        .setContent('<button id="rmRpt" style="padding:6px 10px;border:1px solid #2c416c;background:#11243c;color:#fff;border-radius:7px;cursor:pointer;font-size:12px">Elimina punto</button>').openOn(map);
+      setTimeout(()=>{ const btn=document.getElementById('rmRpt'); if(btn) btn.onclick=()=>{ rulerPts.splice(i,1); map.closePopup(); redrawRuler(); }; },0);
+    });
+  });
+  updateRulerReadout();
+}
 function loadSaved(){ routePts=JSON.parse(localStorage.getItem('mnav_route')||'[]'); catches=JSON.parse(localStorage.getItem('mnav_catches')||'[]'); drawRoute(); drawCatches(); }
 
 function setMode(m){ mode=(mode===m)?null:m;
   [['ruler','btnRuler'],['wp','btnWp'],['catch','btnCatch']].forEach(([k,id])=>$(id).classList.toggle('active',mode===k));
   map.getContainer().style.cursor = mode?'crosshair':'';
-  if(mode==='ruler'){ rulerPts=[]; drawRuler(); readout('Righello: tocca il <b>primo</b> punto'); }
+  if(mode==='ruler'){ rulerPts=[]; redrawRuler(); }
   else if(mode==='wp') readout('Waypoint: tocca per aggiungere punti alla rotta');
   else if(mode==='catch') readout('Cattura: tocca il punto della cattura');
   else readout('');
@@ -155,11 +175,7 @@ $('catchCancel').onclick=()=>{ $('catchInput').style.display='none'; pendingCatc
 map.on('click', async e=>{
   const lat=e.latlng.lat, lon=e.latlng.lng;
   if(mode==='ruler'){
-    if(rulerPts.length>=2) rulerPts=[];
-    rulerPts.push({lat,lng:lon}); drawRuler();
-    if(rulerPts.length===2){ const d=nm([rulerPts[0].lat,rulerPts[0].lng],[rulerPts[1].lat,rulerPts[1].lng]);
-      readout('Distanza: <b>'+d.toFixed(2)+' nm</b> ('+(d*1.852).toFixed(2)+' km) &middot; tocca per ricominciare'); }
-    else readout('Righello: tocca il <b>secondo</b> punto');
+    rulerPts.push({lat,lng:lon}); redrawRuler();
   } else if(mode==='wp'){
     routePts.push({lat,lng:lon}); drawRoute(); persist();
     readout('Rotta: <b>'+routePts.length+' WP</b>, '+totNm(routePts).toFixed(2)+' nm &middot; <a id="undoWp">annulla</a> &middot; <a id="clrWp">cancella</a>');
@@ -254,7 +270,7 @@ function zoneZoom(f){ const z=$('zone'); if(!z._fullLayout||!z._fullLayout.scene
 $('zZoomIn').onclick=()=>zoneZoom(0.8); $('zZoomOut').onclick=()=>zoneZoom(1.25);
 
 loadSaved();
-window.MN={map:map, get mode(){return mode;}};   // hook test/automazione
+window.MN={map:map, get mode(){return mode;}, get ruler(){return rulerPts;}};   // hook test/automazione
 </script>
 <script>if('serviceWorker' in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}</script>
 </body>

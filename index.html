@@ -41,6 +41,26 @@
   #loading{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:80;
     background:rgba(6,18,31,.75);color:var(--accent);font-size:15px}
   .flex{display:flex;align-items:center}
+  #picker{display:none;left:50%;top:50%;transform:translate(-50%,-50%);padding:14px 16px;width:min(86vw,300px);z-index:70}
+  #picker h4{margin:0 0 8px;color:var(--accent);font-size:13px}
+  #picker .coord{font-family:ui-monospace,monospace;color:#fff;font-size:13px;margin:2px 0 8px}
+  #picker label{font-size:11.5px;color:#8fb0cc}
+  #picker .sizes{display:flex;gap:6px;margin:5px 0 10px}
+  #picker .sizes button{flex:1;padding:7px 0;border-radius:7px;border:1px solid var(--line);background:#11243c;color:var(--txt);cursor:pointer;font-size:13px}
+  #picker .sizes button.sel{background:#1e3a63;border-color:var(--accent);color:#fff}
+  #picker .act{display:flex;gap:8px;margin-top:4px}
+  #picker .act button{flex:1;padding:9px 0;border-radius:8px;border:1px solid var(--line);cursor:pointer;font-size:13px;font-weight:600}
+  #pkGo{background:var(--accent);color:#062535;border-color:var(--accent)}
+  #pkCancel{background:#11243c;color:var(--txt)}
+  #customList{top:auto;bottom:42px;left:8px;padding:8px 11px;max-width:220px;display:none}
+  #customList b{color:var(--accent);font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+  #customList button{display:block;width:100%;text-align:left;margin:4px 0 0;padding:6px 8px;border-radius:6px;border:1px solid var(--line);background:#11243c;color:var(--txt);font-size:12px;cursor:pointer}
+  #crosshair{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:40;pointer-events:none;color:#16e0ff;font-size:24px;text-shadow:0 0 4px #000;display:none}
+  #globeCtrl{display:none;bottom:42px;left:50%;transform:translateX(-50%);padding:6px;gap:6px}
+  #globeCtrl button{padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:#11243c;color:var(--txt);font-size:14px;font-weight:600;cursor:pointer}
+  #globeCtrl #gHere{background:#1e3a63;border-color:var(--accent);color:#fff}
+  #zoneZoom{display:none;right:8px;bottom:54px;flex-direction:column;padding:5px;gap:5px}
+  #zoneZoom button{width:40px;height:36px;border-radius:8px;border:1px solid var(--line);background:#11243c;color:#fff;font-size:19px;font-weight:700;cursor:pointer}
 </style>
 </head>
 <body>
@@ -53,6 +73,18 @@
 <div id="zonelist" class="hud">
   <b>Zone del Mediterraneo</b>
   <div id="zoneButtons"></div>
+</div>
+
+<div id="customList" class="hud"><b>Le mie aree (offline)</b><div id="customButtons"></div></div>
+
+<div id="picker" class="hud">
+  <h4>Scarica area fondali</h4>
+  <div class="coord" id="pkCoord">—</div>
+  <label>Dimensione del riquadro</label>
+  <div class="sizes" id="pkSizes">
+    <button data-s="1">1&deg;</button><button data-s="2" class="sel">2&deg;</button><button data-s="3">3&deg;</button>
+  </div>
+  <div class="act"><button id="pkCancel">Annulla</button><button id="pkGo">Scarica e apri</button></div>
 </div>
 
 <div id="nav" class="hud">
@@ -72,11 +104,23 @@
   <button id="btnCatch" title="In arrivo">Cattura</button>
 </div>
 
-<div id="hint" class="hud">Trascina per ruotare il globo &middot; tocca una zona per aprire i fondali 3D</div>
+<div id="crosshair">&#9678;</div>
+<div id="globeCtrl" class="hud flex">
+  <button id="gZoomOut" title="Zoom indietro">&minus;</button>
+  <button id="gZoomIn" title="Zoom avanti">+</button>
+  <button id="gHere" title="Scarica i fondali al centro del globo">&#9678; Area qui</button>
+</div>
+<div id="zoneZoom" class="hud flex">
+  <button id="zZoomIn" title="Zoom avanti">+</button>
+  <button id="zZoomOut" title="Zoom indietro">&minus;</button>
+</div>
+
+<div id="hint" class="hud">Ruota il globo e centra un punto di mare, poi <b>&#9678; Area qui</b> &middot; oppure tocca una zona predefinita</div>
 <div id="loading">Carico i fondali…</div>
 
 <script src="https://unpkg.com/globe.gl"></script>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js"></script>
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
@@ -94,8 +138,11 @@ async function initGlobe(){
     .backgroundColor('#06121f')
     .pointsData(zones).pointLat('lat').pointLng('lng').pointColor(()=> '#16e0ff')
     .pointAltitude(0.02).pointRadius(0.5).pointLabel(z=>z.nome)
-    .onPointClick(z=>openZone(z.key));
+    .onPointClick(z=>openZone(z.key))
+    .onGlobeClick(onGlobeClick);
   world.pointOfView({lat:40, lng:14, altitude:1.7}, 0);
+  renderCustomList();
+  $('globeCtrl').style.display='flex'; $('crosshair').style.display='block';
   // lista zone (più facile da toccare su mobile)
   const wrap = $('zoneButtons'); wrap.innerHTML='';
   zones.forEach(z=>{ const b=document.createElement('button'); b.textContent=z.nome;
@@ -146,10 +193,9 @@ function emptyAux(){
       marker:{size:8,color:'#39ff7a',symbol:'diamond',line:{color:'#063',width:2}},text:[],textposition:'top center',textfont:{color:'#39ff7a',size:11}}
   ];
 }
-async function openZone(key){
-  const z = MANIFEST.zones.find(x=>x.key===key); if(!z) return;
-  $('loading').style.display='flex';
-  const g = await loadGrid(z); curZone = g;
+async function openZoneView(g, nome){
+  $('loading').textContent='Carico i fondali…'; $('loading').style.display='flex';
+  curZone = g;
   const surf = {type:'surface', x:g.lons, y:g.lats, z:g.zz,
     colorscale:[[0,'#08233f'],[.35,'#0e4a73'],[.6,'#1f8fb0'],[.8,'#57c08a'],[.93,'#caa24a'],[1,'#9a3a1c']],
     colorbar:{title:{text:'m'},x:1,thickness:10}, showscale:true, lighting:{ambient:.8}};
@@ -160,24 +206,29 @@ async function openZone(key){
       zaxis:{title:'quota m',color:'#7fa0bd',gridcolor:'#16304a'},
       camera:{eye:{x:1.4,y:-1.6,z:1.0}}}};
   await Plotly.newPlot('zone',[surf,...emptyAux()],layout,{displayModeBar:false,responsive:true});
-  // ripristina rotta/catture salvate per questa zona
-  const saved = JSON.parse(localStorage.getItem('marenav_'+key)||'{}');
+  const saved = JSON.parse(localStorage.getItem('marenav_'+g.z.key)||'{}');
   routePts = saved.route||[]; catches = saved.catches||[]; rulerPts=[]; mode=null;
   drawRoute(); drawCatches(); drawRuler();
   document.getElementById('zone').on('plotly_click', onZoneClick);
   $('globe').style.display='none'; $('zone').style.display='block';
   $('btnBack').style.display='block'; $('nav').style.display='block'; $('tools').style.display='flex';
-  $('zonelist').style.display='none'; $('hint').style.display='none';
-  $('title').innerHTML = z.nome + '<small>cartina 3D dei fondali (EMODnet)</small>';
-  $('loading').style.display='none';
-  setMode(null);
+  $('zonelist').style.display='none'; $('hint').style.display='none'; $('picker').style.display='none'; $('customList').style.display='none';
+  $('globeCtrl').style.display='none'; $('crosshair').style.display='none'; $('zoneZoom').style.display='flex';
+  $('title').innerHTML = nome + '<small>cartina 3D dei fondali (EMODnet)</small>';
+  $('loading').style.display='none'; setMode(null);
+}
+async function openZone(key){
+  const z = MANIFEST.zones.find(x=>x.key===key); if(!z) return;
+  $('loading').textContent='Carico i fondali…'; $('loading').style.display='flex';
+  await openZoneView(await loadGrid(z), z.nome);
 }
 function backToGlobe(){
   $('zone').style.display='none'; $('globe').style.display='block';
   $('btnBack').style.display='none'; $('nav').style.display='none'; $('tools').style.display='none';
   $('zonelist').style.display='block'; $('hint').style.display='block';
   $('title').innerHTML = 'MareNav3D<small>tocca una zona o un mare del Mediterraneo</small>';
-  stopGps(); curZone=null; setMode(null);
+  $('globeCtrl').style.display='flex'; $('crosshair').style.display='block'; $('zoneZoom').style.display='none';
+  stopGps(); curZone=null; setMode(null); renderCustomList();
 }
 $('btnBack').onclick = backToGlobe;
 
@@ -263,6 +314,109 @@ function stopGps(){ if(watchId!=null){navigator.geolocation.clearWatch(watchId);
   $('nGps').textContent='spento'; $('btnGps').classList.remove('active');
   if(curZone) Plotly.restyle('zone',{x:[[]],y:[[]],z:[[]],text:[[]]},[BOAT]); }
 $('btnGps').onclick=()=>{ watchId==null?startGps():stopGps(); };
+
+// ---------- RETTANGOLO LIBERO: scelta area sul globo, download EMODnet, parse, cache offline ----------
+const NATIVE_RES = 0.0010416666666666667;
+let pickCenter=null, pickSize=2;
+
+function onGlobeClick(coords){
+  if(!coords) return;
+  pickCenter={lat:coords.lat, lon:coords.lng};
+  $('pkCoord').textContent = coords.lat.toFixed(3)+' N   '+coords.lng.toFixed(3)+' E';
+  $('picker').style.display='block';
+}
+document.querySelectorAll('#pkSizes button').forEach(function(btn){
+  btn.onclick=function(){ pickSize=+btn.dataset.s;
+    document.querySelectorAll('#pkSizes button').forEach(function(b){ b.classList.toggle('sel', b===btn); }); };
+});
+$('pkCancel').onclick=function(){ $('picker').style.display='none'; pickCenter=null; };
+$('pkGo').onclick=function(){ if(pickCenter) downloadArea(pickCenter.lat, pickCenter.lon, pickSize); };
+
+function clampCov(latS,latN,lonW,lonE){ return [Math.max(11.2,latS), Math.min(89,latN), Math.max(-70,lonW), Math.min(42.9,lonE)]; }
+function areaId(latS,latN,lonW,lonE){ return [latS,latN,lonW,lonE].map(function(v){return v.toFixed(2);}).join('_'); }
+
+async function downloadArea(latC, lonC, size){
+  const half=size/2;
+  const c=clampCov(latC-half, latC+half, lonC-half, lonC+half);
+  const latS=c[0], latN=c[1], lonW=c[2], lonE=c[3], id=areaId(latS,latN,lonW,lonE);
+  $('picker').style.display='none';
+  let g = loadCustomFromCache(id);
+  if(!g){
+    if(!window.GeoTIFF){ alert('Libreria mappe non disponibile (offline?). Apri online la prima volta per scaricare una nuova area.'); return; }
+    $('loading').textContent='Scarico i fondali...'; $('loading').style.display='flex';
+    try{
+      const sf=Math.min(300/((lonE-lonW)/NATIVE_RES), 300/((latN-latS)/NATIVE_RES), 1).toFixed(4);
+      const url='https://ows.emodnet-bathymetry.eu/wcs?service=WCS&version=2.0.1&request=GetCoverage&coverageId=emodnet__mean&format=image/tiff'
+        +'&subset=Lat('+latS+','+latN+')&subset=Long('+lonW+','+lonE+')&scalefactor='+sf;
+      const buf=await (await fetch(url)).arrayBuffer();
+      const tiff=await GeoTIFF.fromArrayBuffer(buf);
+      const img=await tiff.getImage();
+      const band=(await img.readRasters())[0];
+      g = gridFromRaster(band, img.getWidth(), img.getHeight(), {latS:latS,latN:latN,lonW:lonW,lonE:lonE,id:id});
+      let sea=0; for(let i=0;i<g.zz.length;i++) for(let j=0;j<g.zz[i].length;j++){ const v=g.zz[i][j]; if(v!=null && v<0) sea++; }
+      if(sea<20){ $('loading').style.display='none'; alert('Area senza dati di fondale (terra o fuori EMODnet). Scegli un punto in mare aperto.'); return; }
+      saveCustomToCache(id, g, {latC:latC,lonC:lonC});
+    }catch(e){ $('loading').style.display='none'; alert('Download non riuscito: '+e.message+'. Offline: puoi aprire solo aree gia scaricate.'); return; }
+  }
+  await openZoneView(g, 'Area '+latC.toFixed(2)+'N '+lonC.toFixed(2)+'E');
+}
+
+function gridFromRaster(band, cols, rows, bb){
+  const lats=[],lons=[],zz=[];
+  const dlat=(bb.latN-bb.latS)/(rows-1), dlon=(bb.lonE-bb.lonW)/(cols-1);
+  for(let i=0;i<rows;i++) lats.push(+(bb.latN - i*dlat).toFixed(5));
+  for(let j=0;j<cols;j++) lons.push(+(bb.lonW + j*dlon).toFixed(5));
+  for(let i=0;i<rows;i++){ const row=new Array(cols);
+    for(let j=0;j<cols;j++){ const v=band[i*cols+j]; row[j]=(v>-12000 && v<200)? v : null; } zz.push(row); }
+  return {lats:lats,lons:lons,zz:zz,rows:rows,cols:cols,dlat:dlat,dlon:dlon,
+    z:{latN:bb.latN,latS:bb.latS,lonW:bb.lonW,lonE:bb.lonE,rows:rows,cols:cols,nodata:32767,key:'custom_'+bb.id}};
+}
+
+function u8ToB64(u8){ let s=''; const C=0x8000; for(let i=0;i<u8.length;i+=C) s+=String.fromCharCode.apply(null, u8.subarray(i,i+C)); return btoa(s); }
+function b64ToU8(b64){ const bin=atob(b64); const u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i); return u8; }
+function saveCustomToCache(id, g, meta){
+  const rows=g.rows, cols=g.cols, arr=new Int16Array(rows*cols);
+  for(let i=0;i<rows;i++) for(let j=0;j<cols;j++){ const v=g.zz[i][j]; arr[i*cols+j]=(v==null)?32767:Math.max(-32766,Math.min(32766,Math.round(v))); }
+  const rec={bbox:{latN:g.z.latN,latS:g.z.latS,lonW:g.z.lonW,lonE:g.z.lonE}, rows:rows, cols:cols,
+    nome:'Area '+meta.latC.toFixed(2)+'N '+meta.lonC.toFixed(2)+'E', b64:u8ToB64(new Uint8Array(arr.buffer))};
+  try{
+    localStorage.setItem('marenav_cg_'+id, JSON.stringify(rec));
+    let list=JSON.parse(localStorage.getItem('marenav_customs')||'[]').filter(function(x){return x.id!==id;});
+    list.unshift({id:id, nome:rec.nome});
+    while(list.length>6){ const d=list.pop(); localStorage.removeItem('marenav_cg_'+d.id); }
+    localStorage.setItem('marenav_customs', JSON.stringify(list));
+  }catch(e){}
+  renderCustomList();
+}
+function loadCustomFromCache(id){
+  const raw=localStorage.getItem('marenav_cg_'+id); if(!raw) return null;
+  const rec=JSON.parse(raw), arr=new Int16Array(b64ToU8(rec.b64).buffer);
+  const band=new Float32Array(arr.length);
+  for(let k=0;k<arr.length;k++) band[k]=(arr[k]===32767)?NaN:arr[k];
+  return gridFromRaster(band, rec.cols, rec.rows, {latN:rec.bbox.latN,latS:rec.bbox.latS,lonW:rec.bbox.lonW,lonE:rec.bbox.lonE,id:id});
+}
+function renderCustomList(){
+  const list=JSON.parse(localStorage.getItem('marenav_customs')||'[]');
+  const wrap=$('customButtons'); if(!wrap) return; wrap.innerHTML='';
+  const onGlobe = getComputedStyle($('globe')).display!=='none';
+  $('customList').style.display = (list.length && onGlobe)?'block':'none';
+  list.forEach(function(it){ const b=document.createElement('button'); b.textContent='📍 '+it.nome;
+    b.onclick=function(){ const g=loadCustomFromCache(it.id); if(g) openZoneView(g,it.nome); };
+    wrap.appendChild(b); });
+}
+// ---------- zoom globo + "Area qui" + zoom cartina 3D ----------
+function globeZoom(f){ if(!world) return; const v=world.pointOfView();
+  world.pointOfView({altitude:Math.max(0.25,Math.min(3.5, v.altitude*f))}, 300); }
+$('gZoomIn').onclick=function(){ globeZoom(0.7); };
+$('gZoomOut').onclick=function(){ globeZoom(1.4); };
+$('gHere').onclick=function(){ if(!world) return; const v=world.pointOfView(); onGlobeClick({lat:v.lat, lng:v.lng}); };
+function zoneZoom(f){ const g=document.getElementById('zone'); if(!g||!g._fullLayout||!g._fullLayout.scene) return;
+  const cam=g._fullLayout.scene.camera, e=cam.eye, c=cam.center||{x:0,y:0,z:0};
+  Plotly.relayout('zone',{'scene.camera.eye':{x:c.x+(e.x-c.x)*f, y:c.y+(e.y-c.y)*f, z:c.z+(e.z-c.z)*f}}); }
+$('zZoomIn').onclick=function(){ zoneZoom(0.8); };
+$('zZoomOut').onclick=function(){ zoneZoom(1.25); };
+
+window.MN={downloadArea:downloadArea, renderCustomList:renderCustomList};   // hook per test/automazione
 
 initGlobe().catch(e=>{ $('hint').textContent='Errore init: '+e.message; });
 </script>

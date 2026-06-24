@@ -1,0 +1,6 @@
+# script di servizio e artefatti di test (non pubblicati)
+_*.py
+_*.png
+__pycache__/
+# eccezione: tieni il generatore dati (riproducibilità)
+!data/_generate_data.py

@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MareNav3D">
+<meta name="theme-color" content="#06121f">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>MareNav3D — navigazione 3D</title>
+<style>
+  :root{--bg:#06121f;--panel:rgba(10,22,38,.92);--line:#1f3650;--txt:#dfeaf5;--accent:#16e0ff;--green:#39ff7a;}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);overflow:hidden;
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-text-size-adjust:100%;overscroll-behavior:none}
+  #globe,#zone{position:absolute;inset:0}
+  #zone{display:none}
+  .hud{position:fixed;z-index:50;background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    box-shadow:0 4px 16px rgba(0,0,0,.5);backdrop-filter:blur(3px)}
+  #title{top:8px;left:50%;transform:translateX(-50%);padding:7px 14px;font-weight:700;font-size:15px;color:#fff;letter-spacing:.3px}
+  #title small{display:block;font-weight:400;font-size:10.5px;color:#8fb0cc;text-align:center}
+  #zonelist{top:54px;left:8px;padding:9px 11px;max-width:220px}
+  #zonelist b{color:var(--accent);font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+  #zonelist button{display:block;width:100%;text-align:left;margin:5px 0 0;padding:7px 9px;border-radius:7px;
+    border:1px solid var(--line);background:#11243c;color:var(--txt);font-size:13px;cursor:pointer}
+  #zonelist button:hover{background:#19324f}
+  #hint{bottom:10px;left:50%;transform:translateX(-50%);padding:6px 12px;font-size:11.5px;color:#9fc0db}
+  #btnBack{top:8px;left:8px;padding:8px 12px;font-weight:600;font-size:13px;color:var(--txt);
+    border:1px solid var(--line);background:var(--panel);border-radius:9px;cursor:pointer;display:none;z-index:60}
+  #nav{display:none;right:8px;top:8px;padding:9px 12px;width:min(72vw,240px);font-size:12.5px;line-height:1.5}
+  #nav h4{margin:0 0 5px;color:var(--accent);font-size:12px}
+  #nav .row{display:flex;justify-content:space-between;gap:8px}
+  #nav .k{color:#8fb0cc}
+  #nav .v{font-family:ui-monospace,monospace;color:#fff}
+  #tools{display:none;bottom:10px;left:8px;padding:6px;gap:6px}
+  #tools button{padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:#11243c;color:var(--txt);font-size:12px;cursor:pointer}
+  #tools button.active{background:#1e3a63;border-color:var(--accent);color:#fff}
+  #loading{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:80;
+    background:rgba(6,18,31,.75);color:var(--accent);font-size:15px}
+  .flex{display:flex;align-items:center}
+</style>
+</head>
+<body>
+<div id="globe"></div>
+<div id="zone"></div>
+
+<div id="title" class="hud">MareNav3D<small>tocca una zona o un mare del Mediterraneo</small></div>
+<button id="btnBack" class="hud">&#8592; Mappamondo</button>
+
+<div id="zonelist" class="hud">
+  <b>Zone del Mediterraneo</b>
+  <div id="zoneButtons"></div>
+</div>
+
+<div id="nav" class="hud">
+  <h4>Dati di navigazione</h4>
+  <div class="row"><span class="k">Lat</span><span class="v" id="nLat">—</span></div>
+  <div class="row"><span class="k">Lon</span><span class="v" id="nLon">—</span></div>
+  <div class="row"><span class="k">Fondale qui</span><span class="v" id="nDep">—</span></div>
+  <div class="row"><span class="k">Velocità</span><span class="v" id="nSpd">—</span></div>
+  <div class="row"><span class="k">Rotta (COG)</span><span class="v" id="nCog">—</span></div>
+  <div class="row"><span class="k">GPS</span><span class="v" id="nGps">spento</span></div>
+</div>
+
+<div id="tools" class="hud flex">
+  <button id="btnGps">GPS</button>
+  <button id="btnRuler" title="In arrivo">Righello</button>
+  <button id="btnWp" title="In arrivo">Waypoint</button>
+  <button id="btnCatch" title="In arrivo">Cattura</button>
+</div>
+
+<div id="hint" class="hud">Trascina per ruotare il globo &middot; tocca una zona per aprire i fondali 3D</div>
+<div id="loading">Carico i fondali…</div>
+
+<script src="https://unpkg.com/globe.gl"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+let MANIFEST = null, world = null, curZone = null, gridCache = {};
+
+// ---------- GLOBO ----------
+async function initGlobe(){
+  MANIFEST = await fetch('data/manifest.json').then(r=>r.json());
+  const zones = MANIFEST.zones.map(z=>({
+    ...z, lat:(z.latN+z.latS)/2, lng:(z.lonW+z.lonE)/2,
+  }));
+  world = Globe()(document.getElementById('globe'))
+    .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
+    .bumpImageUrl('https://unpkg.com/three-globe/example/img/earth-topology.png')
+    .backgroundColor('#06121f')
+    .pointsData(zones).pointLat('lat').pointLng('lng').pointColor(()=> '#16e0ff')
+    .pointAltitude(0.02).pointRadius(0.5).pointLabel(z=>z.nome)
+    .onPointClick(z=>openZone(z.key));
+  world.pointOfView({lat:40, lng:14, altitude:1.7}, 0);
+  // lista zone (più facile da toccare su mobile)
+  const wrap = $('zoneButtons'); wrap.innerHTML='';
+  zones.forEach(z=>{ const b=document.createElement('button'); b.textContent=z.nome;
+    b.onclick=()=>openZone(z.key); wrap.appendChild(b); });
+  // auto-resize
+  const fit=()=>{ if(world){ world.width(innerWidth).height(innerHeight); } };
+  addEventListener('resize', fit); fit();
+}
+
+// ---------- CARICAMENTO GRIGLIA BATIMETRICA ----------
+async function loadGrid(z){
+  if(gridCache[z.key]) return gridCache[z.key];
+  const buf = await fetch('data/'+z.key+'.bin').then(r=>r.arrayBuffer());
+  const raw = new Int16Array(buf);                 // riga 0 = Nord, row-major
+  const rows=z.rows, cols=z.cols, nd=z.nodata;
+  const lats=[], lons=[], zz=[];
+  const dlat=(z.latN-z.latS)/(rows-1), dlon=(z.lonE-z.lonW)/(cols-1);
+  for(let i=0;i<rows;i++) lats.push(+(z.latN - i*dlat).toFixed(5));
+  for(let j=0;j<cols;j++) lons.push(+(z.lonW + j*dlon).toFixed(5));
+  for(let i=0;i<rows;i++){ const row=new Array(cols);
+    for(let j=0;j<cols;j++){ const v=raw[i*cols+j]; row[j]=(v===nd)?null:v; }
+    zz.push(row); }
+  const g={lats,lons,zz,rows,cols,dlat,dlon,z};
+  gridCache[z.key]=g; return g;
+}
+function depthAt(g, lat, lon){
+  if(lat>g.z.latN||lat<g.z.latS||lon<g.z.lonW||lon>g.z.lonE) return null;
+  const i=Math.round((g.z.latN-lat)/g.dlat), j=Math.round((lon-g.z.lonW)/g.dlon);
+  if(i<0||i>=g.rows||j<0||j>=g.cols) return null;
+  return g.zz[i][j];
+}
+
+// ---------- VISTA ZONA (Plotly 3D) ----------
+async function openZone(key){
+  const z = MANIFEST.zones.find(x=>x.key===key); if(!z) return;
+  $('loading').style.display='flex';
+  const g = await loadGrid(z);
+  curZone = g;
+  const surf = {type:'surface', x:g.lons, y:g.lats, z:g.zz,
+    colorscale:[[0,'#08233f'],[.35,'#0e4a73'],[.6,'#1f8fb0'],[.8,'#57c08a'],[.93,'#caa24a'],[1,'#9a3a1c']],
+    colorbar:{title:{text:'m'},x:1,thickness:10}, showscale:true, lighting:{ambient:.8}};
+  const layout = {paper_bgcolor:'#06121f', margin:{l:0,r:0,t:0,b:0},
+    scene:{aspectmode:'manual', aspectratio:{x:2,y:2,z:0.5},
+      xaxis:{title:'lon',color:'#7fa0bd',gridcolor:'#16304a'},
+      yaxis:{title:'lat',color:'#7fa0bd',gridcolor:'#16304a'},
+      zaxis:{title:'quota m',color:'#7fa0bd',gridcolor:'#16304a'},
+      camera:{eye:{x:1.4,y:-1.6,z:1.0}}}};
+  await Plotly.newPlot('zone',[surf],layout,{displayModeBar:false,responsive:true});
+  $('globe').style.display='none'; $('zone').style.display='block';
+  $('btnBack').style.display='block'; $('nav').style.display='block'; $('tools').style.display='flex';
+  $('zonelist').style.display='none'; $('hint').style.display='none';
+  $('title').innerHTML = z.nome + '<small>cartina 3D dei fondali (EMODnet)</small>';
+  $('loading').style.display='none';
+}
+function backToGlobe(){
+  $('zone').style.display='none'; $('globe').style.display='block';
+  $('btnBack').style.display='none'; $('nav').style.display='none'; $('tools').style.display='none';
+  $('zonelist').style.display='block'; $('hint').style.display='block';
+  $('title').innerHTML = 'MareNav3D<small>tocca una zona o un mare del Mediterraneo</small>';
+  stopGps(); curZone=null;
+}
+$('btnBack').onclick = backToGlobe;
+
+// ---------- BARCA GPS ----------
+let watchId=null, boatIdx=null;
+function setBoat(lat,lon){
+  const g=curZone; if(!g) return;
+  const tr={type:'scatter3d', x:[lon], y:[lat], z:[2], mode:'markers+text',
+    marker:{size:8,color:'#39ff7a',symbol:'diamond',line:{color:'#063',width:2}},
+    text:['barca'], textposition:'top center', textfont:{color:'#39ff7a',size:11}, name:'barca'};
+  if(boatIdx===null){ Plotly.addTraces('zone',tr); boatIdx=document.getElementById('zone').data.length-1; }
+  else Plotly.restyle('zone',{x:[[lon]],y:[[lat]],z:[[2]]},[boatIdx]);
+}
+function onPos(p){
+  const {latitude:lat,longitude:lon,speed,heading}=p.coords;
+  $('nLat').textContent=lat.toFixed(5); $('nLon').textContent=lon.toFixed(5);
+  const d = curZone?depthAt(curZone,lat,lon):null;
+  $('nDep').textContent = d==null?'fuori zona':(Math.abs(Math.round(d))+' m');
+  $('nSpd').textContent = (speed!=null&&!isNaN(speed))?((speed*1.94384).toFixed(1)+' kn'):'—';
+  $('nCog').textContent = (heading!=null&&!isNaN(heading))?(Math.round(heading)+'°'):'—';
+  if(curZone) setBoat(lat,lon);
+}
+function startGps(){
+  if(!navigator.geolocation){ $('nGps').textContent='non disponibile'; return; }
+  watchId=navigator.geolocation.watchPosition(onPos, e=>{$('nGps').textContent=(e.message||'errore');},
+    {enableHighAccuracy:true, maximumAge:1000, timeout:15000});
+  $('nGps').textContent='attivo'; $('btnGps').classList.add('active');
+}
+function stopGps(){ if(watchId!=null){navigator.geolocation.clearWatch(watchId);watchId=null;}
+  $('nGps').textContent='spento'; $('btnGps').classList.remove('active'); boatIdx=null; }
+$('btnGps').onclick=()=>{ watchId==null?startGps():stopGps(); };
+
+// strumenti in arrivo (fasi successive)
+['btnRuler','btnWp','btnCatch'].forEach(id=>$(id).onclick=()=>alert('In arrivo nella prossima fase.'));
+
+initGlobe().catch(e=>{ $('hint').textContent='Errore init: '+e.message; });
+</script>
+<script>if('serviceWorker' in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}</script>
+</body>
+</html>

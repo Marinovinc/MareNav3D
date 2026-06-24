@@ -454,7 +454,13 @@ async function show3D(g){
   const layout={paper_bgcolor:'#06121f',margin:{l:0,r:0,t:0,b:0},showlegend:false,
     scene:{aspectmode:'manual',aspectratio:{x:2,y:2,z:0.9},camera:{eye:{x:1.4,y:-1.6,z:1.0}},
     xaxis:{title:'lon',color:'#7fa0bd'},yaxis:{title:'lat',color:'#7fa0bd'},zaxis:{title:'quota m',color:'#7fa0bd'}}};
-  cur3d={ base:[surf,...extra], layout:layout, bb:g.bb, maxD:maxD };
+  // punti cardinali ai bordi della scena (N=lat max, S=lat min, E=lon max, W=lon min)
+  const cLon=(g.bb.lonW+g.bb.lonE)/2, cLat=(g.bb.latS+g.bb.latN)/2;
+  const card={type:'scatter3d',mode:'text',
+    x:[cLon,cLon,g.bb.lonE,g.bb.lonW], y:[g.bb.latN,g.bb.latS,cLat,cLat], z:[0,0,0,0],
+    text:['N','S','E','W'], textposition:'middle center', hoverinfo:'skip', showlegend:false, name:'bussola',
+    textfont:{color:'#ffffff',size:17,family:'system-ui'}};
+  cur3d={ base:[surf,...extra,card], layout:layout, bb:g.bb, maxD:maxD };
   await Plotly.newPlot('zone',[...cur3d.base,...buildPlanes()],layout,{displayModeBar:false,responsive:true});
   $('loading').style.display='none';
 }

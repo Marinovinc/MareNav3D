@@ -390,29 +390,39 @@ function gridDepth(g, lat, lon){
   if(i<0||i>=g.rows||j<0||j>=g.cols) return null;
   return g.zz[i][j];
 }
+function fmtLat(v){ return Math.abs(v).toFixed(4)+'° '+(v>=0?'N':'S'); }
+function fmtLon(v){ return Math.abs(v).toFixed(4)+'° '+(v>=0?'E':'W'); }
 async function show3D(g){
+  // profondità positiva (m) + coordinate geografiche per l'hover (non x/y/z grezzi)
+  const absDepth=g.zz.map(r=>r.map(v=>v==null?null:Math.abs(Math.round(v))));
   const surf={type:'surface',x:g.lons,y:g.lats,z:g.zz,
     colorscale:[[0,'rgb(40,135,161)'],[0.1667,'rgb(121,167,172)'],[0.3333,'rgb(181,200,184)'],[0.5,'rgb(237,234,194)'],[0.6667,'rgb(214,189,141)'],[0.8333,'rgb(189,146,90)'],[1,'rgb(161,105,40)']],
-    colorbar:{title:{text:'quota m'},x:1,thickness:10}};
+    colorbar:{title:{text:'quota m'},x:1,thickness:10},
+    customdata:absDepth,
+    hovertemplate:'Profondità <b>%{customdata} m</b><br>Lat %{y:.4f}°  ·  Lon %{x:.4f}°<extra></extra>'};
   // rotta + barca drappeggiate sul fondale 3D (come ROTTA_A_3D)
   const extra=[];
   if(routePts.length){
     const rx=[],ry=[],rz=[],rt=[];
     routePts.forEach((p,i)=>{ const d=gridDepth(g,p.lat,p.lng); if(d!=null){ rx.push(p.lng); ry.push(p.lat); rz.push(d+15); rt.push(String(i+1)); } });
     if(rx.length) extra.push({type:'scatter3d',x:rx,y:ry,z:rz,mode:'lines+markers+text',
-      line:{color:'#ffd54a',width:6},marker:{size:4,color:'#ffd54a'},text:rt,textposition:'top center',textfont:{color:'#ffe08a',size:11},name:'rotta'});
+      line:{color:'#ffd54a',width:6},marker:{size:4,color:'#ffd54a'},text:rt,textposition:'top center',textfont:{color:'#ffe08a',size:11},name:'rotta',
+      customdata:rx.map((_,i)=>[fmtLat(ry[i]),fmtLon(rx[i])]),
+      hovertemplate:'Waypoint %{text}<br>%{customdata[0]}  ·  %{customdata[1]}<extra></extra>'});
   }
   if(boatM){ const bll=boatM.getLatLng(), bd=gridDepth(g,bll.lat,bll.lng);
     if(bd!=null){ const SURF=20;
       // beam ecoscandaglio (barca in superficie -> fondo)
       extra.push({type:'scatter3d',x:[bll.lng,bll.lng],y:[bll.lat,bll.lat],z:[SURF,bd],mode:'lines',
-        line:{color:'#16e0ff',width:5},opacity:0.9,name:'beam ecoscandaglio'});
+        line:{color:'#16e0ff',width:5},opacity:0.9,name:'beam ecoscandaglio',hoverinfo:'skip'});
       // eco sul fondo (profondita)
       extra.push({type:'scatter3d',x:[bll.lng],y:[bll.lat],z:[bd],mode:'markers+text',
-        marker:{size:5,color:'#16e0ff',line:{color:'#063',width:1}},text:[Math.abs(Math.round(bd))+' m'],textposition:'bottom center',textfont:{color:'#8df0ff',size:10},name:'eco fondo'});
+        marker:{size:5,color:'#16e0ff',line:{color:'#063',width:1}},text:[Math.abs(Math.round(bd))+' m'],textposition:'bottom center',textfont:{color:'#8df0ff',size:10},name:'eco fondo',
+        hovertemplate:'Fondo sotto barca: <b>'+Math.abs(Math.round(bd))+' m</b><br>'+fmtLat(bll.lat)+'  ·  '+fmtLon(bll.lng)+'<extra></extra>'});
       // barca in superficie
       extra.push({type:'scatter3d',x:[bll.lng],y:[bll.lat],z:[SURF],mode:'markers+text',
-        marker:{size:8,color:'#39ff7a',symbol:'diamond',line:{color:'#063',width:2}},text:['barca'],textposition:'top center',textfont:{color:'#39ff7a',size:11},name:'barca'});
+        marker:{size:8,color:'#39ff7a',symbol:'diamond',line:{color:'#063',width:2}},text:['barca'],textposition:'top center',textfont:{color:'#39ff7a',size:11},name:'barca',
+        hovertemplate:'Barca<br>'+fmtLat(bll.lat)+'  ·  '+fmtLon(bll.lng)+'<extra></extra>'});
     }
   }
   $('zone').style.display='block'; $('btnBack3d').style.display='block';

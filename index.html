@@ -111,8 +111,8 @@
 <script>
 "use strict";
 const $=id=>document.getElementById(id);
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 const NATIVE_RES=0.0010416666666666667;
-const WMS='https://ows.emodnet-bathymetry.eu/wms';
 const WCS_URL='https://ows.emodnet-bathymetry.eu/wcs?service=WCS&version=2.0.1&request=GetCoverage&coverageId=emodnet__mean&format=image/tiff';
 
 // ---------- CARTA 2D (Leaflet) ----------
@@ -129,9 +129,6 @@ const bathy=L.tileLayer('https://tiles.emodnet-bathymetry.eu/2020/baselayer/web_
 const seamark=L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; OpenSeaMap'}).addTo(map);
 L.control.layers({'Costa (CARTO)':base},
   {'Fondali EMODnet':bathy,'Segnalamenti (OpenSeaMap)':seamark},{position:'topleft',collapsed:true}).addTo(map);
-// avviso quando lo zoom e' troppo basso per i fondali EMODnet
-function emodHint(){ if(map.getZoom()<EMOD_MINZOOM) readout('Fondali EMODnet: <b>zooma di più</b> (livello '+EMOD_MINZOOM+'+) per vederli'); }
-map.on('zoomend', ()=>{ if(map.getZoom()<EMOD_MINZOOM && !mode) emodHint(); });
 
 // ---------- profondità EMODnet (WCS, in un punto) ----------
 function fetchTO(url,ms){const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),ms);return fetch(url,{signal:ctl.signal}).finally(()=>clearTimeout(t));}
@@ -171,7 +168,7 @@ function drawRoute(){
   });
 }
 function drawCatches(){ catchLayer.clearLayers();
-  catches.forEach(c=>L.marker([c.lat,c.lng]).addTo(catchLayer).bindPopup('🎣 '+(c.note||'cattura'))); }
+  catches.forEach(c=>L.marker([c.lat,c.lng]).addTo(catchLayer).bindPopup('🎣 '+escapeHtml(c.note||'cattura'))); }
 function rulerTotal(){ let t=0; for(let i=1;i<rulerPts.length;i++) t+=nm([rulerPts[i-1].lat,rulerPts[i-1].lng],[rulerPts[i].lat,rulerPts[i].lng]); return t; }
 function updateRulerReadout(){ if(mode!=='ruler') return;
   if(rulerPts.length<2){ readout(rulerPts.length? 'Righello: tocca per aggiungere punti &middot; <a id="clrRul">cancella</a>' : 'Righello: tocca il <b>primo</b> punto'); }
@@ -227,7 +224,7 @@ function renderRoutesList(){
     const open=document.createElement('button'); open.textContent=r.name+' ('+totNm(r.pts).toFixed(1)+' nm, '+r.pts.length+' wp)';
     open.style.cssText='flex:1;text-align:left;padding:7px 9px;border-radius:6px;border:1px solid #2c416c;background:#11243c;color:#dfeaf5;font-size:12px;cursor:pointer';
     open.onclick=()=>{ routePts=r.pts.map(p=>({lat:p.lat,lng:p.lng})); nextWpIdx=0; drawRoute(); persist(); $('routesPanel').style.display='none';
-      readout('Rotta caricata: '+r.name+' ('+totNm(routePts).toFixed(2)+' nm)'); };
+      readout('Rotta caricata: '+escapeHtml(r.name)+' ('+totNm(routePts).toFixed(2)+' nm)'); };
     const del=document.createElement('button'); del.textContent='✗';
     del.style.cssText='padding:7px 10px;border-radius:6px;border:1px solid #2c416c;background:#11243c;color:#ff6b6b;cursor:pointer';
     del.onclick=()=>{ setSavedRoutes(savedRoutes().filter(x=>x.id!==r.id)); renderRoutesList(); };
@@ -240,7 +237,7 @@ $('rtSave').onclick=()=>{ if(!routePts.length){ readout('Nessun waypoint da salv
   $('routesPanel').style.display='none';
   askInput('Salva rotta','nome rotta','Rotta '+(savedRoutes().length+1), name=>{ name=(name||'Rotta').slice(0,30);
     const list=savedRoutes(); list.unshift({id:'r'+Date.now(), name:name, pts:routePts.map(p=>({lat:p.lat,lng:p.lng}))}); setSavedRoutes(list);
-    readout('Rotta salvata: '+name); }); };
+    readout('Rotta salvata: '+escapeHtml(name)); }); };
 
 map.on('click', async e=>{
   const lat=e.latlng.lat, lon=e.latlng.lng;
@@ -401,7 +398,8 @@ function zoneZoom(f){ const z=$('zone'); if(!z._fullLayout||!z._fullLayout.scene
 $('zZoomIn').onclick=()=>zoneZoom(0.8); $('zZoomOut').onclick=()=>zoneZoom(1.25);
 
 loadSaved();
-window.MN={map:map, get mode(){return mode;}, get ruler(){return rulerPts;}, get route(){return routePts;}};   // hook test/automazione
+// hook test/automazione: attivo SOLO con ?mntest nell'URL (non esposto in produzione)
+if(location.search.indexOf('mntest')>=0) window.MN={map:map, get mode(){return mode;}, get ruler(){return rulerPts;}, get route(){return routePts;}};
 </script>
 <script>if('serviceWorker' in navigator){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}</script>
 </body>

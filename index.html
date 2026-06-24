@@ -18,7 +18,7 @@
   html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);overflow:hidden;
     font-family:system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-text-size-adjust:100%;overscroll-behavior:none}
   #map{position:absolute;inset:0;background:#0a1a2e}
-  #zone{position:absolute;inset:0;display:none;background:#06121f}
+  #zone{position:absolute;inset:0;display:none;background:#06121f;z-index:1100}
   .hud{position:fixed;z-index:1000;background:var(--panel);border:1px solid var(--line);border-radius:10px;
     box-shadow:0 4px 16px rgba(0,0,0,.5)}
   #title{top:8px;left:50%;transform:translateX(-50%);padding:6px 13px;font-weight:700;font-size:14px;color:#fff}
@@ -100,7 +100,7 @@
   <button id="btnRoutes">Rotte</button>
   <button id="btnTrack">Traccia</button>
   <button id="btnCatch">Cattura</button>
-  <button id="btn3d">Vedi 3D</button>
+  <button id="btn3d">Fondali 3D</button>
 </div>
 
 <div id="loading"><div id="loadtxt">Carico…</div><button id="loadCancel" style="display:none">Annulla</button></div>
@@ -126,7 +126,7 @@ const esriOcean=L.layerGroup([
   L.tileLayer('https://services.arcgisonline.com/arcgis/rest/services/Ocean/World_Ocean_Reference/MapServer/tile/{z}/{y}/{x}',{maxZoom:18,maxNativeZoom:13})
 ]);
 const bathy=L.tileLayer.wms(WMS,{layers:'emodnet:mean_multicolour',format:'image/png',transparent:true,
-  opacity:0.6, maxZoom:18, maxNativeZoom:8, attribution:'&copy; EMODnet Bathymetry'}).addTo(map);
+  opacity:0.6, maxZoom:18, maxNativeZoom:9, attribution:'&copy; EMODnet Bathymetry'}).addTo(map);
 const seamark=L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; OpenSeaMap'}).addTo(map);
 L.control.layers({'Costa':base,'Oceano (Esri)':esriOcean},
   {'Fondali EMODnet':bathy,'Segnalamenti (OpenSeaMap)':seamark},{position:'topleft',collapsed:true}).addTo(map);
@@ -353,16 +353,17 @@ $('btn3d').onclick=async()=>{
 };
 async function show3D(g){
   const surf={type:'surface',x:g.lons,y:g.lats,z:g.zz,
-    colorscale:[[0,'#08233f'],[.35,'#0e4a73'],[.6,'#1f8fb0'],[.8,'#57c08a'],[.93,'#caa24a'],[1,'#9a3a1c']],
-    colorbar:{title:{text:'m'},x:1,thickness:10},lighting:{ambient:.8}};
+    colorscale:[[0,'rgb(40,135,161)'],[0.1667,'rgb(121,167,172)'],[0.3333,'rgb(181,200,184)'],[0.5,'rgb(237,234,194)'],[0.6667,'rgb(214,189,141)'],[0.8333,'rgb(189,146,90)'],[1,'rgb(161,105,40)']],
+    colorbar:{title:{text:'quota m'},x:1,thickness:10}};
   const boat = boatM ? [{type:'scatter3d',x:[boatM.getLatLng().lng],y:[boatM.getLatLng().lat],z:[5],mode:'markers+text',
     marker:{size:7,color:'#39ff7a',symbol:'diamond',line:{color:'#063',width:2}},text:['barca'],textposition:'top center'}] : [];
+  $('zone').style.display='block'; $('btnBack3d').style.display='block';
+  $('zoneZoom').style.display='flex'; $('tools').style.display='none'; $('title').style.display='none';
   await Plotly.newPlot('zone',[surf,...boat],{paper_bgcolor:'#06121f',margin:{l:0,r:0,t:0,b:0},
-    scene:{aspectmode:'manual',aspectratio:{x:2,y:2,z:0.5},camera:{eye:{x:1.4,y:-1.6,z:1.0}},
+    scene:{aspectmode:'manual',aspectratio:{x:2,y:2,z:0.9},camera:{eye:{x:1.4,y:-1.6,z:1.0}},
     xaxis:{title:'lon',color:'#7fa0bd'},yaxis:{title:'lat',color:'#7fa0bd'},zaxis:{title:'quota m',color:'#7fa0bd'}}},
     {displayModeBar:false,responsive:true});
-  $('loading').style.display='none'; $('zone').style.display='block'; $('btnBack3d').style.display='block';
-  $('zoneZoom').style.display='flex'; $('tools').style.display='none'; $('title').style.display='none';
+  $('loading').style.display='none';
 }
 $('btnBack3d').onclick=()=>{ $('zone').style.display='none'; $('btnBack3d').style.display='none';
   $('zoneZoom').style.display='none'; $('tools').style.display='flex'; $('title').style.display='block'; };

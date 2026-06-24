@@ -453,7 +453,9 @@ async function show3D(g){
   $('zoneZoom').style.display='flex'; $('planesCtl').style.display='flex'; $('tools').style.display='none'; $('title').style.display='none';
   const layout={paper_bgcolor:'#06121f',margin:{l:0,r:0,t:0,b:0},showlegend:false,
     scene:{aspectmode:'manual',aspectratio:{x:2,y:2,z:0.9},camera:{eye:{x:1.4,y:-1.6,z:1.0}},
-    xaxis:{title:'lon',color:'#7fa0bd'},yaxis:{title:'lat',color:'#7fa0bd'},zaxis:{title:'quota m',color:'#7fa0bd'}}};
+    xaxis:{title:'lon',color:'#7fa0bd',showspikes:true,spikecolor:'#ffd24a',spikethickness:3,spikesides:true},
+    yaxis:{title:'lat',color:'#7fa0bd',showspikes:true,spikecolor:'#ffd24a',spikethickness:3,spikesides:true},
+    zaxis:{title:'quota m',color:'#7fa0bd',showspikes:true,spikecolor:'#16e0ff',spikethickness:3,spikesides:true}}};
   // punti cardinali ai bordi della scena (N=lat max, S=lat min, E=lon max, W=lon min)
   const cLon=(g.bb.lonW+g.bb.lonE)/2, cLat=(g.bb.latS+g.bb.latN)/2;
   const card={type:'scatter3d',mode:'text',

@@ -128,12 +128,28 @@ function depthAt(g, lat, lon){
   return g.zz[i][j];
 }
 
-// ---------- VISTA ZONA (Plotly 3D) ----------
+// ---------- VISTA ZONA (Plotly 3D) — tracce a indici fissi ----------
+const SURF=0, ROUTE=1, CATCH=2, RULER=3, BOAT=4;   // indici tracce
+const AUXZ=5;                                       // quota marker sul pelo dell'acqua
+let mode=null;                                      // null|'ruler'|'wp'|'catch'
+let routePts=[], catches=[], rulerPts=[];
+
+function emptyAux(){
+  return [
+    {type:'scatter3d',x:[],y:[],z:[],mode:'lines+markers+text',name:'rotta',
+      line:{color:'#ffd54a',width:5},marker:{size:4,color:'#ffd54a'},text:[],textposition:'top center',textfont:{color:'#ffe08a',size:10}},
+    {type:'scatter3d',x:[],y:[],z:[],mode:'markers+text',name:'catture',
+      marker:{size:7,color:'#ff7a1a',symbol:'diamond-open',line:{width:2}},text:[],textposition:'top center',textfont:{color:'#ffb05a',size:10}},
+    {type:'scatter3d',x:[],y:[],z:[],mode:'lines+markers',name:'righello',
+      line:{color:'#ff3b6b',width:5,dash:'dot'},marker:{size:5,color:'#ff3b6b'}},
+    {type:'scatter3d',x:[],y:[],z:[],mode:'markers+text',name:'barca',
+      marker:{size:8,color:'#39ff7a',symbol:'diamond',line:{color:'#063',width:2}},text:[],textposition:'top center',textfont:{color:'#39ff7a',size:11}}
+  ];
+}
 async function openZone(key){
   const z = MANIFEST.zones.find(x=>x.key===key); if(!z) return;
   $('loading').style.display='flex';
-  const g = await loadGrid(z);
-  curZone = g;
+  const g = await loadGrid(z); curZone = g;
   const surf = {type:'surface', x:g.lons, y:g.lats, z:g.zz,
     colorscale:[[0,'#08233f'],[.35,'#0e4a73'],[.6,'#1f8fb0'],[.8,'#57c08a'],[.93,'#caa24a'],[1,'#9a3a1c']],
     colorbar:{title:{text:'m'},x:1,thickness:10}, showscale:true, lighting:{ambient:.8}};
@@ -143,32 +159,91 @@ async function openZone(key){
       yaxis:{title:'lat',color:'#7fa0bd',gridcolor:'#16304a'},
       zaxis:{title:'quota m',color:'#7fa0bd',gridcolor:'#16304a'},
       camera:{eye:{x:1.4,y:-1.6,z:1.0}}}};
-  await Plotly.newPlot('zone',[surf],layout,{displayModeBar:false,responsive:true});
+  await Plotly.newPlot('zone',[surf,...emptyAux()],layout,{displayModeBar:false,responsive:true});
+  // ripristina rotta/catture salvate per questa zona
+  const saved = JSON.parse(localStorage.getItem('marenav_'+key)||'{}');
+  routePts = saved.route||[]; catches = saved.catches||[]; rulerPts=[]; mode=null;
+  drawRoute(); drawCatches(); drawRuler();
+  document.getElementById('zone').on('plotly_click', onZoneClick);
   $('globe').style.display='none'; $('zone').style.display='block';
   $('btnBack').style.display='block'; $('nav').style.display='block'; $('tools').style.display='flex';
   $('zonelist').style.display='none'; $('hint').style.display='none';
   $('title').innerHTML = z.nome + '<small>cartina 3D dei fondali (EMODnet)</small>';
   $('loading').style.display='none';
+  setMode(null);
 }
 function backToGlobe(){
   $('zone').style.display='none'; $('globe').style.display='block';
   $('btnBack').style.display='none'; $('nav').style.display='none'; $('tools').style.display='none';
   $('zonelist').style.display='block'; $('hint').style.display='block';
   $('title').innerHTML = 'MareNav3D<small>tocca una zona o un mare del Mediterraneo</small>';
-  stopGps(); curZone=null;
+  stopGps(); curZone=null; setMode(null);
 }
 $('btnBack').onclick = backToGlobe;
 
-// ---------- BARCA GPS ----------
-let watchId=null, boatIdx=null;
-function setBoat(lat,lon){
-  const g=curZone; if(!g) return;
-  const tr={type:'scatter3d', x:[lon], y:[lat], z:[2], mode:'markers+text',
-    marker:{size:8,color:'#39ff7a',symbol:'diamond',line:{color:'#063',width:2}},
-    text:['barca'], textposition:'top center', textfont:{color:'#39ff7a',size:11}, name:'barca'};
-  if(boatIdx===null){ Plotly.addTraces('zone',tr); boatIdx=document.getElementById('zone').data.length-1; }
-  else Plotly.restyle('zone',{x:[[lon]],y:[[lat]],z:[[2]]},[boatIdx]);
+// ---------- distanze ----------
+function nm(a,b){ const R=3440.065,d=Math.PI/180; const dLat=(b[0]-a[0])*d,dLon=(b[1]-a[1])*d;
+  const s=Math.sin(dLat/2)**2+Math.cos(a[0]*d)*Math.cos(b[0]*d)*Math.sin(dLon/2)**2; return R*2*Math.asin(Math.sqrt(s)); }
+function totalNm(pts){ let t=0; for(let i=1;i<pts.length;i++) t+=nm([pts[i-1].lat,pts[i-1].lon],[pts[i].lat,pts[i].lon]); return t; }
+
+// ---------- readout ----------
+let readoutEl=null;
+function readout(html){ if(!readoutEl){ readoutEl=document.createElement('div'); readoutEl.className='hud';
+  readoutEl.style.cssText='bottom:54px;left:50%;transform:translateX(-50%);padding:7px 13px;font-size:12.5px;z-index:55'; document.body.appendChild(readoutEl); }
+  readoutEl.style.display=html?'block':'none'; if(html) readoutEl.innerHTML=html; }
+
+// ---------- disegno tracce ----------
+function drawRoute(){
+  Plotly.restyle('zone',{x:[routePts.map(p=>p.lon)],y:[routePts.map(p=>p.lat)],z:[routePts.map(()=>AUXZ)],
+    text:[routePts.map((p,i)=>String(i+1))]},[ROUTE]);
 }
+function drawCatches(){
+  Plotly.restyle('zone',{x:[catches.map(p=>p.lon)],y:[catches.map(p=>p.lat)],z:[catches.map(()=>AUXZ)],
+    text:[catches.map(p=>'🎣'+(p.note?(' '+p.note):''))]},[CATCH]);
+}
+function drawRuler(){
+  Plotly.restyle('zone',{x:[rulerPts.map(p=>p.lon)],y:[rulerPts.map(p=>p.lat)],z:[rulerPts.map(()=>AUXZ)]},[RULER]);
+}
+function persist(){ const key=curZone&&curZone.z.key; if(!key) return;
+  localStorage.setItem('marenav_'+key, JSON.stringify({route:routePts,catches:catches})); }
+
+// ---------- click sulla superficie per-strumento ----------
+function onZoneClick(ev){
+  if(!mode || !ev||!ev.points||!ev.points[0]) return;
+  const pt=ev.points[0]; const lat=pt.y, lon=pt.x; if(lat==null||lon==null) return;
+  const dep=curZone?depthAt(curZone,lat,lon):null;
+  if(mode==='ruler'){
+    if(rulerPts.length>=2) rulerPts=[];
+    rulerPts.push({lat,lon}); drawRuler();
+    if(rulerPts.length===2){ const d=nm([rulerPts[0].lat,rulerPts[0].lon],[rulerPts[1].lat,rulerPts[1].lon]);
+      readout('Righello: <b>'+d.toFixed(2)+' nm</b> ('+(d*1.852).toFixed(2)+' km) &middot; tocca per ricominciare'); }
+    else readout('Righello: tocca il <b>secondo</b> punto');
+  } else if(mode==='wp'){
+    routePts.push({lat,lon,dep}); drawRoute(); persist();
+    readout('Rotta: <b>'+routePts.length+' WP</b>, totale <b>'+totalNm(routePts).toFixed(2)+' nm</b> &middot; <a id="undoWp" style="color:#16e0ff">annulla</a> &middot; <a id="clrWp" style="color:#ff6b6b">cancella</a>');
+    $('undoWp').onclick=()=>{ routePts.pop(); drawRoute(); persist(); readout('Rotta: <b>'+routePts.length+' WP</b>, totale <b>'+totalNm(routePts).toFixed(2)+' nm</b>'); };
+    $('clrWp').onclick=()=>{ routePts=[]; drawRoute(); persist(); readout('Rotta cancellata'); };
+  } else if(mode==='catch'){
+    const note=(prompt('Nota cattura (specie/peso):','')||'').slice(0,40);
+    catches.push({lat,lon,dep,note,t:Date.now()}); drawCatches(); persist();
+    readout('Cattura registrata'+(dep!=null?(' a '+Math.abs(Math.round(dep))+' m'):'')+' &middot; totale '+catches.length);
+  }
+}
+function setMode(m){ mode = (mode===m)?null:m;
+  [['ruler','btnRuler'],['wp','btnWp'],['catch','btnCatch']].forEach(([k,id])=>$(id).classList.toggle('active',mode===k));
+  if(mode==='ruler'){ rulerPts=[]; drawRuler(); readout('Righello: tocca il <b>primo</b> punto'); }
+  else if(mode==='wp') readout('Waypoint: tocca per aggiungere punti alla rotta');
+  else if(mode==='catch') readout('Cattura: tocca il punto della cattura');
+  else readout('');
+}
+$('btnRuler').onclick=()=>setMode('ruler');
+$('btnWp').onclick=()=>setMode('wp');
+$('btnCatch').onclick=()=>setMode('catch');
+
+// ---------- BARCA GPS ----------
+let watchId=null;
+function setBoat(lat,lon){ if(!curZone) return;
+  Plotly.restyle('zone',{x:[[lon]],y:[[lat]],z:[[AUXZ]],text:[['barca']]},[BOAT]); }
 function onPos(p){
   const {latitude:lat,longitude:lon,speed,heading}=p.coords;
   $('nLat').textContent=lat.toFixed(5); $('nLon').textContent=lon.toFixed(5);
@@ -185,11 +260,9 @@ function startGps(){
   $('nGps').textContent='attivo'; $('btnGps').classList.add('active');
 }
 function stopGps(){ if(watchId!=null){navigator.geolocation.clearWatch(watchId);watchId=null;}
-  $('nGps').textContent='spento'; $('btnGps').classList.remove('active'); boatIdx=null; }
+  $('nGps').textContent='spento'; $('btnGps').classList.remove('active');
+  if(curZone) Plotly.restyle('zone',{x:[[]],y:[[]],z:[[]],text:[[]]},[BOAT]); }
 $('btnGps').onclick=()=>{ watchId==null?startGps():stopGps(); };
-
-// strumenti in arrivo (fasi successive)
-['btnRuler','btnWp','btnCatch'].forEach(id=>$(id).onclick=()=>alert('In arrivo nella prossima fase.'));
 
 initGlobe().catch(e=>{ $('hint').textContent='Errore init: '+e.message; });
 </script>

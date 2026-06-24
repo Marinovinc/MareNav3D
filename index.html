@@ -240,6 +240,7 @@ $('rtSave').onclick=()=>{ if(!routePts.length){ readout('Nessun waypoint da salv
     readout('Rotta salvata: '+escapeHtml(name)); }); };
 
 map.on('click', async e=>{
+  if(rect3dActive) return;            // durante la selezione del rettangolo la mappa non reagisce
   const lat=e.latlng.lat, lon=e.latlng.lng;
   if(mode==='ruler'){
     rulerPts.push({lat,lng:lon}); redrawRuler();
@@ -335,10 +336,40 @@ function gridFromRaster(band,cols,rows,bb){ const lats=[],lons=[],zz=[];
   for(let i=0;i<rows;i++){const row=new Array(cols);for(let j=0;j<cols;j++){const v=band[i*cols+j];row[j]=(v>-12000&&v<200)?v:null;}zz.push(row);}
   return {lats,lons,zz,rows,cols,bb};
 }
-$('btn3d').onclick=async()=>{
-  let b=map.getBounds(); let latS=b.getSouth(),latN=b.getNorth(),lonW=b.getWest(),lonE=b.getEast();
-  // limita l'area 3D a ~3° centrati (per velocità) se la vista e' troppo ampia
-  const cx=(lonW+lonE)/2, cy=(latS+latN)/2, MAX=3.0, MIN=1.0;
+// ---------- Fondali 3D: prima si seleziona l'area con un rettangolo ----------
+let rect3dActive=false, rectStart=null, rectPreview=null;
+function startRect3d(){
+  if(rect3dActive){ cancelRect3d(); return; }
+  setMode(null);                      // disattiva righello/wp/catture
+  rect3dActive=true; rectStart=null;
+  map.dragging.disable(); if(map.boxZoom) map.boxZoom.disable();
+  const cont=map.getContainer(); cont.style.cursor='crosshair'; cont.style.touchAction='none';
+  $('btn3d').classList.add('active');
+  readout('Fondali 3D: <b>trascina</b> per disegnare il rettangolo dell’area &middot; <a id="rectCancel">annulla</a>');
+  const c=$('rectCancel'); if(c) c.onclick=cancelRect3d;
+}
+function cancelRect3d(){
+  rect3dActive=false; rectStart=null;
+  map.dragging.enable(); if(map.boxZoom) map.boxZoom.enable();
+  const cont=map.getContainer(); cont.style.cursor=''; cont.style.touchAction='';
+  $('btn3d').classList.remove('active');
+  if(rectPreview){ map.removeLayer(rectPreview); rectPreview=null; }
+  readout('');
+}
+(function(){ const cont=map.getContainer();
+  cont.addEventListener('pointerdown', e=>{ if(!rect3dActive)return; e.preventDefault(); rectStart=map.mouseEventToLatLng(e); try{cont.setPointerCapture(e.pointerId);}catch(_){} }, true);
+  cont.addEventListener('pointermove', e=>{ if(!rect3dActive||!rectStart)return; e.preventDefault();
+    const b=L.latLngBounds(rectStart, map.mouseEventToLatLng(e));
+    if(rectPreview) rectPreview.setBounds(b);
+    else rectPreview=L.rectangle(b,{color:'#ffd24a',weight:2,fillColor:'#ffd24a',fillOpacity:0.12,dashArray:'5,4'}).addTo(map); }, true);
+  cont.addEventListener('pointerup', e=>{ if(!rect3dActive||!rectStart)return; e.preventDefault();
+    const b=L.latLngBounds(rectStart, map.mouseEventToLatLng(e));
+    const latS=b.getSouth(),latN=b.getNorth(),lonW=b.getWest(),lonE=b.getEast();
+    cancelRect3d(); build3D(latS,latN,lonW,lonE); }, true);
+})();
+async function build3D(latS,latN,lonW,lonE){
+  // l'utente sceglie l'area: limito solo per velocità (MAX) e dimensione minima utile (MIN)
+  const cx=(lonW+lonE)/2, cy=(latS+latN)/2, MAX=3.0, MIN=0.5;
   if(lonE-lonW>MAX){ lonW=cx-MAX/2; lonE=cx+MAX/2; } if(latN-latS>MAX){ latS=cy-MAX/2; latN=cy+MAX/2; }
   if(lonE-lonW<MIN){ lonW=cx-MIN/2; lonE=cx+MIN/2; } if(latN-latS<MIN){ latS=cy-MIN/2; latN=cy+MIN/2; }
   latS=Math.max(30.2,latS);latN=Math.min(46,latN);lonW=Math.max(-6,lonW);lonE=Math.min(36.5,lonE);
@@ -347,10 +378,11 @@ $('btn3d').onclick=async()=>{
     const area=(lonE-lonW)*(latN-latS);
     const g= area<=12 ? await fetchGridSingle(latS,latN,lonW,lonE) : await fetchGridTiled(latS,latN,lonW,lonE);
     let sea=0; g.zz.forEach(r=>r.forEach(v=>{if(v!=null&&v<0)sea++;}));
-    if(sea<20){ $('loading').style.display='none'; alert('Area senza fondali. Inquadra del mare.'); return; }
+    if(sea<20){ $('loading').style.display='none'; alert('Area senza fondali. Seleziona del mare.'); return; }
     await show3D(g);
   }catch(e){ $('loading').style.display='none'; alert('3D non riuscito: '+e.message); }
-};
+}
+$('btn3d').onclick=startRect3d;
 function gridDepth(g, lat, lon){
   if(lat>g.bb.latN||lat<g.bb.latS||lon<g.bb.lonW||lon>g.bb.lonE) return null;
   const i=Math.round((g.bb.latN-lat)/((g.bb.latN-g.bb.latS)/(g.rows-1)));

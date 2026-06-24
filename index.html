@@ -137,40 +137,40 @@ const EMOD_MINZOOM=0, EMOD_MAXNATIVE=14;
 const bathy=L.tileLayer('https://tiles.emodnet-bathymetry.eu/2020/baselayer/web_mercator/{z}/{x}/{y}.png',
   {minZoom:EMOD_MINZOOM, maxZoom:18, maxNativeZoom:EMOD_MAXNATIVE, opacity:0.97, className:'bathy-layer', attribution:'&copy; EMODnet Bathymetry'}).addTo(map);
 // ---------- Terraferma/isole: satellite EOX Sentinel-2 (aperto, CC-BY), mascherato SOLO sulla terra ----------
-// l'elevazione Terrarium (aperta, CORS ok) rende il satellite trasparente sul mare (elev<=0):
-// terra/isole = satellite nitido, mare = fondali EMODnet invariati sotto.
+// Maschera basata sulla COSTA reale dell'EMODnet (azzurro=mare -> trasparente, mostra il fondale;
+// beige=terra -> satellite). Robusto anche per terre SOTTO il livello del mare (depressioni): restano terra.
 const SAT_URL='https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg';
-const ELEV_URL='https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
+const COAST_URL='https://tiles.emodnet-bathymetry.eu/2020/baselayer/web_mercator/{z}/{x}/{y}.png';
 const LandSat=L.GridLayer.extend({
   createTile:function(c,done){
     const t=document.createElement('canvas'), s=this.getTileSize(); t.width=s.x; t.height=s.y;
     const ctx=t.getContext('2d',{willReadFrequently:true});
-    const sat=new Image(), elev=new Image(); sat.crossOrigin='anonymous'; elev.crossOrigin='anonymous';
+    const sat=new Image(), coast=new Image(); sat.crossOrigin='anonymous'; coast.crossOrigin='anonymous';
     let n=0, dead=false;
     const fail=()=>{ if(!dead){ dead=true; done(null,t); } };           // su errore: tile trasparente (mostra i fondali)
     const go=()=>{ if(++n<2||dead) return;
       try{
         ctx.drawImage(sat,0,0,s.x,s.y);
-        const ew=elev.naturalWidth||256, eh=elev.naturalHeight||256;
-        const ec=document.createElement('canvas'); ec.width=ew; ec.height=eh;
-        const ectx=ec.getContext('2d',{willReadFrequently:true}); ectx.drawImage(elev,0,0);
-        const ed=ectx.getImageData(0,0,ew,eh).data;
+        const cw=coast.naturalWidth||256, ch=coast.naturalHeight||256;
+        const cc=document.createElement('canvas'); cc.width=cw; cc.height=ch;
+        const cctx=cc.getContext('2d',{willReadFrequently:true}); cctx.drawImage(coast,0,0);
+        const cd=cctx.getImageData(0,0,cw,ch).data;
         const im=ctx.getImageData(0,0,s.x,s.y), d=im.data;
-        for(let j=0;j<s.y;j++){ const ej=Math.min(eh-1,(j*eh/s.y)|0);
-          for(let i=0;i<s.x;i++){ const k=(ej*ew+Math.min(ew-1,(i*ew/s.x)|0))*4;
-            const E=(ed[k]*256+ed[k+1]+ed[k+2]/256)-32768;
-            if(E<=0) d[(j*s.x+i)*4+3]=0;                                 // mare -> trasparente
+        for(let j=0;j<s.y;j++){ const cj=Math.min(ch-1,(j*ch/s.y)|0);
+          for(let i=0;i<s.x;i++){ const ck=(cj*cw+Math.min(cw-1,(i*cw/s.x)|0))*4;
+            // EMODnet: mare = azzurro (B>R), terra = beige (R>B). Solo il mare -> satellite trasparente.
+            if(cd[ck+2]-cd[ck] > 18) d[(j*s.x+i)*4+3]=0;
           } }
         ctx.putImageData(im,0,0); done(null,t);
       }catch(e){ done(null,t); }
     };
-    sat.onload=go; elev.onload=go; sat.onerror=fail; elev.onerror=fail;
-    sat.src=L.Util.template(SAT_URL,c); elev.src=L.Util.template(ELEV_URL,c);
+    sat.onload=go; coast.onload=go; sat.onerror=fail; coast.onerror=fail;
+    sat.src=L.Util.template(SAT_URL,c); coast.src=L.Util.template(COAST_URL,c);
     return t;
   }
 });
 const landSat=new LandSat({maxZoom:18,maxNativeZoom:14,zIndex:250,
-  attribution:'&copy; EOX Sentinel-2 cloudless (CC-BY), &copy; Mapzen/Terrarium'}).addTo(map);
+  attribution:'&copy; EOX Sentinel-2 cloudless (CC-BY)'}).addTo(map);
 const seamark=L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; OpenSeaMap'}).addTo(map);
 // batimetriche (isobate stile Navionics) - layer WMS EMODnet, attivo solo a zoom adeguato (>=CONT_MINZOOM)
 const CONT_MINZOOM=8;

@@ -1,10 +1,8 @@
 // MareNav3D - service worker: precache app + zone batimetriche (offline); cache-first per CDN (globe.gl/Plotly/texture)
-const CACHE = 'marenav3d-v1';
+// v2: zone scaricate on-demand (EMODnet) e cachate in localStorage; il SW cachea solo il guscio app + (a runtime) le CDN
+const CACHE = 'marenav3d-v2';
 const ASSETS = [
-  './', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png',
-  './data/manifest.json',
-  './data/tirreno.bin', './data/adriatico.bin', './data/ionio.bin',
-  './data/ligure.bin', './data/sardo.bin', './data/sicilia.bin'
+  './', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'
 ];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));

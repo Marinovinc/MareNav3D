@@ -126,18 +126,40 @@
 const $ = id => document.getElementById(id);
 let MANIFEST = null, world = null, curZone = null, gridCache = {};
 
+// Zone ufficiali METEOMAR del Mediterraneo (box DERIVATI dalla cartina di riferimento - DA VERIFICARE).
+// 1-15 = acque italiane (download in una richiesta); 16-20 = grandi/lontane (download a tasselli).
+const MED_ZONES = [
+  {key:'z1', n:1,  nome:'Mar di Corsica',                 latS:41.5, latN:43.0, lonW:9.3,  lonE:11.0},
+  {key:'z2', n:2,  nome:'Mar di Sardegna',                latS:38.8, latN:41.3, lonW:6.0,  lonE:8.5},
+  {key:'z3', n:3,  nome:'Canale di Sardegna',             latS:37.5, latN:39.0, lonW:8.0,  lonE:10.0},
+  {key:'z4', n:4,  nome:'Mar Ligure',                     latS:43.0, latN:44.3, lonW:7.5,  lonE:10.0},
+  {key:'z5', n:5,  nome:'Tirreno settentrionale',         latS:41.3, latN:43.0, lonW:9.5,  lonE:11.5},
+  {key:'z6', n:6,  nome:'Tirreno centrale W',             latS:40.0, latN:41.5, lonW:10.5, lonE:12.3},
+  {key:'z7', n:7,  nome:'Tirreno centrale E',             latS:40.0, latN:41.5, lonW:12.3, lonE:14.5},
+  {key:'z8', n:8,  nome:'Tirreno meridionale W',          latS:38.5, latN:40.0, lonW:11.5, lonE:13.0},
+  {key:'z9', n:9,  nome:'Tirreno meridionale E',          latS:38.5, latN:40.0, lonW:13.0, lonE:15.5},
+  {key:'z10',n:10, nome:'Stretto di Sicilia',             latS:36.0, latN:38.0, lonW:11.0, lonE:15.0},
+  {key:'z11',n:11, nome:'Ionio meridionale',              latS:35.0, latN:37.5, lonW:15.0, lonE:19.5},
+  {key:'z12',n:12, nome:'Ionio settentrionale',           latS:37.5, latN:40.0, lonW:15.0, lonE:19.0},
+  {key:'z13',n:13, nome:'Adriatico meridionale',          latS:40.0, latN:42.0, lonW:15.5, lonE:19.5},
+  {key:'z14',n:14, nome:'Adriatico centrale',             latS:42.0, latN:44.0, lonW:13.0, lonE:16.5},
+  {key:'z15',n:15, nome:'Adriatico settentrionale',       latS:44.0, latN:45.8, lonW:12.0, lonE:14.0},
+  {key:'z16',n:16, nome:'Med. occ. - Alboran',            latS:35.0, latN:37.0, lonW:-5.5, lonE:0.0},
+  {key:'z17',n:17, nome:'Med. occ. - Baleari',            latS:37.0, latN:41.0, lonW:0.0,  lonE:6.0},
+  {key:'z18',n:18, nome:'Mar Libico',                     latS:31.5, latN:35.0, lonW:15.0, lonE:25.0},
+  {key:'z19',n:19, nome:'Med. or. - Egeo e sud Creta',    latS:33.0, latN:40.5, lonW:20.0, lonE:27.0},
+  {key:'z20',n:20, nome:'Med. or. - Mar di Levante',      latS:31.0, latN:37.0, lonW:27.0, lonE:36.0},
+];
+
 // ---------- GLOBO ----------
 async function initGlobe(){
-  MANIFEST = await fetch('data/manifest.json').then(r=>r.json());
-  const zones = MANIFEST.zones.map(z=>({
-    ...z, lat:(z.latN+z.latS)/2, lng:(z.lonW+z.lonE)/2,
-  }));
+  const zones = MED_ZONES.map(z=>({ ...z, lat:(z.latN+z.latS)/2, lng:(z.lonW+z.lonE)/2 }));
   world = Globe()(document.getElementById('globe'))
     .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
     .bumpImageUrl('https://unpkg.com/three-globe/example/img/earth-topology.png')
     .backgroundColor('#06121f')
     .pointsData(zones).pointLat('lat').pointLng('lng').pointColor(()=> '#16e0ff')
-    .pointAltitude(0.02).pointRadius(0.5).pointLabel(z=>z.nome)
+    .pointAltitude(0.02).pointRadius(0.45).pointLabel(z=>z.n+' '+z.nome)
     .onPointClick(z=>openZone(z.key))
     .onGlobeClick(onGlobeClick);
   world.pointOfView({lat:40, lng:14, altitude:1.7}, 0);
@@ -145,7 +167,7 @@ async function initGlobe(){
   $('globeCtrl').style.display='flex'; $('crosshair').style.display='block';
   // lista zone (più facile da toccare su mobile)
   const wrap = $('zoneButtons'); wrap.innerHTML='';
-  zones.forEach(z=>{ const b=document.createElement('button'); b.textContent=z.nome;
+  zones.forEach(z=>{ const b=document.createElement('button'); b.textContent=z.n+' - '+z.nome;
     b.onclick=()=>openZone(z.key); wrap.appendChild(b); });
   // auto-resize
   const fit=()=>{ if(world){ world.width(innerWidth).height(innerHeight); } };
@@ -218,9 +240,8 @@ async function openZoneView(g, nome){
   $('loading').style.display='none'; setMode(null);
 }
 async function openZone(key){
-  const z = MANIFEST.zones.find(x=>x.key===key); if(!z) return;
-  $('loading').textContent='Carico i fondali…'; $('loading').style.display='flex';
-  await openZoneView(await loadGrid(z), z.nome);
+  const z = MED_ZONES.find(x=>x.key===key); if(!z) return;
+  await openBBox(z.latS, z.latN, z.lonW, z.lonE, z.n+' - '+z.nome);
 }
 function backToGlobe(){
   $('zone').style.display='none'; $('globe').style.display='block';
@@ -335,30 +356,61 @@ $('pkGo').onclick=function(){ if(pickCenter) downloadArea(pickCenter.lat, pickCe
 function clampCov(latS,latN,lonW,lonE){ return [Math.max(11.2,latS), Math.min(89,latN), Math.max(-70,lonW), Math.min(42.9,lonE)]; }
 function areaId(latS,latN,lonW,lonE){ return [latS,latN,lonW,lonE].map(function(v){return v.toFixed(2);}).join('_'); }
 
-async function downloadArea(latC, lonC, size){
-  const half=size/2;
-  const c=clampCov(latC-half, latC+half, lonC-half, lonC+half);
-  const latS=c[0], latN=c[1], lonW=c[2], lonE=c[3], id=areaId(latS,latN,lonW,lonE);
-  $('picker').style.display='none';
-  let g = loadCustomFromCache(id);
-  if(!g){
-    if(!window.GeoTIFF){ alert('Libreria mappe non disponibile (offline?). Apri online la prima volta per scaricare una nuova area.'); return; }
-    $('loading').textContent='Scarico i fondali...'; $('loading').style.display='flex';
-    try{
-      const sf=Math.min(300/((lonE-lonW)/NATIVE_RES), 300/((latN-latS)/NATIVE_RES), 1).toFixed(4);
-      const url='https://ows.emodnet-bathymetry.eu/wcs?service=WCS&version=2.0.1&request=GetCoverage&coverageId=emodnet__mean&format=image/tiff'
-        +'&subset=Lat('+latS+','+latN+')&subset=Long('+lonW+','+lonE+')&scalefactor='+sf;
-      const buf=await (await fetch(url)).arrayBuffer();
-      const tiff=await GeoTIFF.fromArrayBuffer(buf);
-      const img=await tiff.getImage();
-      const band=(await img.readRasters())[0];
-      g = gridFromRaster(band, img.getWidth(), img.getHeight(), {latS:latS,latN:latN,lonW:lonW,lonE:lonE,id:id});
-      let sea=0; for(let i=0;i<g.zz.length;i++) for(let j=0;j<g.zz[i].length;j++){ const v=g.zz[i][j]; if(v!=null && v<0) sea++; }
-      if(sea<20){ $('loading').style.display='none'; alert('Area senza dati di fondale (terra o fuori EMODnet). Scegli un punto in mare aperto.'); return; }
-      saveCustomToCache(id, g, {latC:latC,lonC:lonC});
-    }catch(e){ $('loading').style.display='none'; alert('Download non riuscito: '+e.message+'. Offline: puoi aprire solo aree gia scaricate.'); return; }
+const WCS_URL='https://ows.emodnet-bathymetry.eu/wcs?service=WCS&version=2.0.1&request=GetCoverage&coverageId=emodnet__mean&format=image/tiff';
+async function fetchTile(latS,latN,lonW,lonE,maxpx){
+  const sf=Math.min(maxpx/((lonE-lonW)/NATIVE_RES), maxpx/((latN-latS)/NATIVE_RES), 1).toFixed(4);
+  const url=WCS_URL+'&subset=Lat('+latS+','+latN+')&subset=Long('+lonW+','+lonE+')&scalefactor='+sf;
+  const buf=await (await fetch(url)).arrayBuffer();
+  const tiff=await GeoTIFF.fromArrayBuffer(buf); const img=await tiff.getImage();
+  return {w:img.getWidth(), h:img.getHeight(), data:(await img.readRasters())[0]};
+}
+async function fetchGridSingle(latS,latN,lonW,lonE,id){
+  const t=await fetchTile(latS,latN,lonW,lonE,300);
+  return gridFromRaster(t.data, t.w, t.h, {latS:latS,latN:latN,lonW:lonW,lonE:lonE,id:id});
+}
+async function fetchGridTiled(latS,latN,lonW,lonE,id){
+  const dlon=lonE-lonW, dlat=latN-latS, res=0.04;
+  const cols=Math.min(420,Math.round(dlon/res)), rows=Math.min(420,Math.round(dlat/res));
+  const band=new Float32Array(rows*cols); band.fill(NaN);
+  const TILE=3.0, nLon=Math.ceil(dlon/TILE), nLat=Math.ceil(dlat/TILE), tiles=[];
+  for(let a=0;a<nLat;a++) for(let o=0;o<nLon;o++){
+    const tS=latS+a*dlat/nLat, tN=latS+(a+1)*dlat/nLat, tW=lonW+o*dlon/nLon, tE=lonW+(o+1)*dlon/nLon;
+    try{ const t=await fetchTile(tS,tN,tW,tE,200); tiles.push({tS:tS,tN:tN,tW:tW,tE:tE,w:t.w,h:t.h,data:t.data}); }
+    catch(e){ /* tassello fuori copertura: salta */ }
   }
-  await openZoneView(g, 'Area '+latC.toFixed(2)+'N '+lonC.toFixed(2)+'E');
+  for(let i=0;i<rows;i++){ const lat=latN-i*(dlat/(rows-1));
+    for(let j=0;j<cols;j++){ const lon=lonW+j*(dlon/(cols-1));
+      for(let k=0;k<tiles.length;k++){ const t=tiles[k];
+        if(lat<=t.tN&&lat>=t.tS&&lon>=t.tW&&lon<=t.tE){
+          const ti=Math.max(0,Math.min(t.h-1,Math.round((t.tN-lat)/((t.tN-t.tS)/(t.h-1)))));
+          const tj=Math.max(0,Math.min(t.w-1,Math.round((lon-t.tW)/((t.tE-t.tW)/(t.w-1)))));
+          const v=t.data[ti*t.w+tj]; band[i*cols+j]=(v>-12000&&v<200)?v:NaN; break; } } } }
+  return gridFromRaster(band, cols, rows, {latS:latS,latN:latN,lonW:lonW,lonE:lonE,id:id});
+}
+async function getZoneGrid(latS,latN,lonW,lonE,id){
+  const area=(lonE-lonW)*(latN-latS);
+  return area<=12 ? await fetchGridSingle(latS,latN,lonW,lonE,id) : await fetchGridTiled(latS,latN,lonW,lonE,id);
+}
+async function openBBox(latS,latN,lonW,lonE,nome){
+  const id=areaId(latS,latN,lonW,lonE);
+  $('picker').style.display='none';
+  let g=loadCustomFromCache(id);
+  if(!g){
+    if(!window.GeoTIFF){ alert('Libreria mappe non disponibile (offline?). Apri online la prima volta per scaricare la zona.'); return; }
+    const big=((lonE-lonW)*(latN-latS))>12;
+    $('loading').textContent = big ? 'Scarico i fondali (a tasselli)...' : 'Scarico i fondali...'; $('loading').style.display='flex';
+    try{
+      g=await getZoneGrid(latS,latN,lonW,lonE,id);
+      let sea=0; for(let i=0;i<g.zz.length;i++) for(let j=0;j<g.zz[i].length;j++){ const v=g.zz[i][j]; if(v!=null&&v<0) sea++; }
+      if(sea<20){ $('loading').style.display='none'; alert('Zona senza dati di fondale (terra o fuori EMODnet).'); return; }
+      saveCustomToCache(id,g,nome);
+    }catch(e){ $('loading').style.display='none'; alert('Download non riuscito: '+e.message+'. Offline: puoi aprire solo zone gia scaricate.'); return; }
+  }
+  await openZoneView(g, nome);
+}
+async function downloadArea(latC, lonC, size){
+  const half=size/2; const c=clampCov(latC-half, latC+half, lonC-half, lonC+half);
+  await openBBox(c[0], c[1], c[2], c[3], 'Area '+latC.toFixed(2)+'N '+lonC.toFixed(2)+'E');
 }
 
 function gridFromRaster(band, cols, rows, bb){
@@ -374,11 +426,11 @@ function gridFromRaster(band, cols, rows, bb){
 
 function u8ToB64(u8){ let s=''; const C=0x8000; for(let i=0;i<u8.length;i+=C) s+=String.fromCharCode.apply(null, u8.subarray(i,i+C)); return btoa(s); }
 function b64ToU8(b64){ const bin=atob(b64); const u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i); return u8; }
-function saveCustomToCache(id, g, meta){
+function saveCustomToCache(id, g, nome){
   const rows=g.rows, cols=g.cols, arr=new Int16Array(rows*cols);
   for(let i=0;i<rows;i++) for(let j=0;j<cols;j++){ const v=g.zz[i][j]; arr[i*cols+j]=(v==null)?32767:Math.max(-32766,Math.min(32766,Math.round(v))); }
   const rec={bbox:{latN:g.z.latN,latS:g.z.latS,lonW:g.z.lonW,lonE:g.z.lonE}, rows:rows, cols:cols,
-    nome:'Area '+meta.latC.toFixed(2)+'N '+meta.lonC.toFixed(2)+'E', b64:u8ToB64(new Uint8Array(arr.buffer))};
+    nome:nome, b64:u8ToB64(new Uint8Array(arr.buffer))};
   try{
     localStorage.setItem('marenav_cg_'+id, JSON.stringify(rec));
     let list=JSON.parse(localStorage.getItem('marenav_customs')||'[]').filter(function(x){return x.id!==id;});

@@ -4,3 +4,4 @@ _*.png
 __pycache__/
 # eccezione: tieni il generatore dati (riproducibilità)
 !data/_generate_data.py
+_*.jpg

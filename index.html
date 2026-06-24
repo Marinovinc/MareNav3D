@@ -372,8 +372,17 @@ async function show3D(g){
       line:{color:'#ffd54a',width:6},marker:{size:4,color:'#ffd54a'},text:rt,textposition:'top center',textfont:{color:'#ffe08a',size:11},name:'rotta'});
   }
   if(boatM){ const bll=boatM.getLatLng(), bd=gridDepth(g,bll.lat,bll.lng);
-    if(bd!=null) extra.push({type:'scatter3d',x:[bll.lng],y:[bll.lat],z:[bd+20],mode:'markers+text',
-      marker:{size:8,color:'#39ff7a',symbol:'diamond',line:{color:'#063',width:2}},text:['barca'],textposition:'top center',textfont:{color:'#39ff7a',size:11},name:'barca'});
+    if(bd!=null){ const SURF=20;
+      // beam ecoscandaglio (barca in superficie -> fondo)
+      extra.push({type:'scatter3d',x:[bll.lng,bll.lng],y:[bll.lat,bll.lat],z:[SURF,bd],mode:'lines',
+        line:{color:'#16e0ff',width:5},opacity:0.9,name:'beam ecoscandaglio'});
+      // eco sul fondo (profondita)
+      extra.push({type:'scatter3d',x:[bll.lng],y:[bll.lat],z:[bd],mode:'markers+text',
+        marker:{size:5,color:'#16e0ff',line:{color:'#063',width:1}},text:[Math.abs(Math.round(bd))+' m'],textposition:'bottom center',textfont:{color:'#8df0ff',size:10},name:'eco fondo'});
+      // barca in superficie
+      extra.push({type:'scatter3d',x:[bll.lng],y:[bll.lat],z:[SURF],mode:'markers+text',
+        marker:{size:8,color:'#39ff7a',symbol:'diamond',line:{color:'#063',width:2}},text:['barca'],textposition:'top center',textfont:{color:'#39ff7a',size:11},name:'barca'});
+    }
   }
   $('zone').style.display='block'; $('btnBack3d').style.display='block';
   $('zoneZoom').style.display='flex'; $('tools').style.display='none'; $('title').style.display='none';

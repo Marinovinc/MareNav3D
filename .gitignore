@@ -12,3 +12,6 @@ _*.js
 _archive_leaflet/
 # backup con timestamp (locali, non pubblicare)
 *.BACKUP_*
+# documento di progetto interno (roadmap/monetizzazione/path locali) - NON pubblicare su repo/Pages pubblici
+PROGETTO_MARENAV3D.md
+PROGETTO_MARENAV3D.html

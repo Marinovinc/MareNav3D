@@ -5,3 +5,10 @@ __pycache__/
 # eccezione: tieni il generatore dati (riproducibilità)
 !data/_generate_data.py
 _*.jpg
+_*.js
+# tile vettoriali (grandi, vanno su R2/object storage, non nel repo)
+*.pmtiles
+# archivio versioni Leaflet obsolete (storico locale, non pubblicare)
+_archive_leaflet/
+# backup con timestamp (locali, non pubblicare)
+*.BACKUP_*

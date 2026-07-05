@@ -548,6 +548,7 @@ try {
   let cur3d=null, seabedStyle='classic', lastGrid=null, boat3d=null, section3d={a:null,b:null};   // seabedStyle: 'classic' (2 superfici) | 'rotta' (superficie unica topografica); boat3d={lon,lat} = sonda; section3d = estremi A/B della sezione batimetrica
   let boatGpsMode=false, gps3dLast=0;   // barca GPS live in 3D: da onPos aggiorna boat3d (throttle 1.5s)
   let dragPan=false;   // interazione scena 3D: false=ruota (turntable), true=sposta (pan)
+  let lastHoverPt=null;   // ultimo punto del fondale sotto il cursore (dati lon/lat/z) -> zoom verso il cursore
   function buildPlanes(){
     if(!cur3d || !$('planesOn').checked) return [];
     const step=Math.max(50,parseInt($('planesStep').value,10)||500), bb=cur3d.bb, tr=[];
@@ -740,6 +741,7 @@ try {
     const pt=ev.points.find(p=>p.data&&p.data.type==='surface')||ev.points[0];
     const z=pt.z, lat=pt.y, lon=pt.x;
     if(z==null||lat==null||lon==null) return;
+    lastHoverPt={x:lon,y:lat,z:z};   // memorizza il punto sotto il cursore per lo zoom-verso-cursore
     const zr=Math.round(z);
     const label = zr<=0 ? ('Fondale <b>'+Math.abs(zr)+' m</b>') : ('Quota <b>'+zr+' m</b> s.l.m.');
     $('zoneReadout').innerHTML = label+' &middot; <small>'+fmtLat(lat)+'  '+fmtLon(lon)+'</small>';
@@ -859,7 +861,7 @@ try {
     const base = useTopo ? [topoSurf, ...extra, card, edges]
                          : [seaSurf, landSurf, ...extra, card, edges];
     const surfIdx = useTopo ? [0] : [0,1];
-    cur3d={ base:base, surfIdx:surfIdx, layout:layout, bb:g.bb, maxD:maxD, zRangeM:zRangeM, mD:mD };
+    cur3d={ base:base, surfIdx:surfIdx, layout:layout, bb:g.bb, maxD:maxD, zRangeM:zRangeM, mD:mD, zmin:zmin, zmax:zmax };
     await Plotly.newPlot('zone',[...cur3d.base,...seaLevelTrace(),...boat3dTraces(),...section3dTraces(),...isobandTraces(),...upwellTraces(),...buildPlanes()],layout,{displayModeBar:false,responsive:true,doubleClick:false});
     // Task 2/4 + sezione: aggancia readout + tap (newPlot azzera i listener -> ri-bind ad ogni ridisegno)
     const zoneEl=$('zone');
@@ -965,16 +967,31 @@ try {
   function applyXray(){ const s=parseFloat($('xraySlider').value)||0; $('xrayVal').textContent=Math.round(s)+'%'; const op=xrayOpacity();
     if(cur3d){ const idx=cur3d.surfIdx||[0]; idx.forEach(i=>{ if(cur3d.base[i]) cur3d.base[i].opacity=op; }); Plotly.restyle('zone',{opacity:op},idx); } }
   $('xraySlider').oninput=applyXray;
+  // Converte un punto DATI (lon,lat,z) nelle coordinate normalizzate della scena Plotly (asse mappato a [-asp/2,+asp/2] centrato).
+  function dataToScene(px,py,pz){
+    const sc=$('zone')._fullLayout&&$('zone')._fullLayout.scene; if(!sc||!cur3d) return {x:0,y:0,z:0};
+    const a=sc.aspectratio||cur3d.layout.scene.aspectratio;
+    const xr=(sc.xaxis&&sc.xaxis.range)||[cur3d.bb.lonW,cur3d.bb.lonE];
+    const yr=(sc.yaxis&&sc.yaxis.range)||[cur3d.bb.latS,cur3d.bb.latN];
+    const zr=(sc.zaxis&&sc.zaxis.range)||[cur3d.zmin,cur3d.zmax];
+    const cv=(v,r,asp)=>{ const mid=(r[0]+r[1])/2, rng=(r[1]-r[0])||1; return (v-mid)/rng*(asp||2); };
+    return {x:cv(px,xr,a.x), y:cv(py,yr,a.y), z:cv(pz,zr,a.z)};
+  }
+  // Zoom VERSO IL CURSORE: scala eye+center attorno al punto sotto il puntatore (lastHoverPt) -> quel punto resta fermo.
+  // Se non c'e' un punto sotto il cursore, ripiega sul centro (comportamento precedente).
   function zoneZoom(f){ const z=$('zone'); const sc=z._fullLayout&&z._fullLayout.scene; if(!sc)return;
-    // camera LIVE: _fullLayout.scene.camera resta fermo dopo la rotazione interattiva -> usare _scene.getCamera()
     const cam=(sc._scene&&sc._scene.getCamera)?sc._scene.getCamera():sc.camera;
     const c=cam.center||{x:0,y:0,z:0}, e=cam.eye, u=cam.up||{x:0,y:0,z:1};
+    const P = lastHoverPt ? dataToScene(lastHoverPt.x,lastHoverPt.y,lastHoverPt.z) : c;
     Plotly.relayout('zone',{
-      'scene.camera.center':{x:c.x,y:c.y,z:c.z},
       'scene.camera.up':{x:u.x,y:u.y,z:u.z},
-      'scene.camera.eye':{x:c.x+(e.x-c.x)*f, y:c.y+(e.y-c.y)*f, z:c.z+(e.z-c.z)*f}
+      'scene.camera.center':{x:P.x+(c.x-P.x)*f, y:P.y+(c.y-P.y)*f, z:P.z+(c.z-P.z)*f},
+      'scene.camera.eye':{x:P.x+(e.x-P.x)*f, y:P.y+(e.y-P.y)*f, z:P.z+(e.z-P.z)*f}
     }); }
   $('zZoomIn').onclick=()=>zoneZoom(0.8); $('zZoomOut').onclick=()=>zoneZoom(1.25);
+  // Rotella del mouse: zoom verso il cursore (intercettiamo per evitare lo zoom-al-centro nativo di Plotly).
+  $('zone').addEventListener('wheel', e=>{ if(!cur3d || $('zone').style.display==='none') return;
+    e.preventDefault(); e.stopPropagation(); zoneZoom(e.deltaY<0?0.9:1.1); }, {capture:true, passive:false});
   // pinch a due dita gestito da noi (lo zoom nativo Plotly 3D e' a scatti): scaliamo dolcemente la camera.
   // Un dito -> rotazione nativa Plotly (non intercettiamo). Due dita -> zoom liscio + stopPropagation.
   (function(){ const z=$('zone'); let pinching=false, lastDist=0;

@@ -52,6 +52,8 @@
   #zoneZoom{position:fixed;right:8px;bottom:54px;display:none;flex-direction:column;gap:5px;z-index:1200;background:rgba(10,22,38,.94);border:1px solid #1f3650;border-radius:10px;padding:5px}
   #zoneZoom button{width:40px;height:36px;border-radius:8px;border:1px solid #1f3650;background:#11243c;color:#fff;font-size:19px;font-weight:700;cursor:pointer}
   #btnSnap{position:fixed;right:8px;bottom:100px;display:none;z-index:1200;width:40px;height:34px;border-radius:8px;border:1px solid #1f3650;background:rgba(10,22,38,.94);color:#16e0ff;font-size:11px;font-weight:700;cursor:pointer}
+  #btnPan{position:fixed;right:8px;bottom:140px;display:none;z-index:1200;width:52px;height:34px;border-radius:8px;border:1px solid #1f3650;background:rgba(10,22,38,.94);color:#dfeaf5;font-size:11px;font-weight:700;cursor:pointer}
+  #btnPan.active{background:#1e3a63;border-color:#16e0ff;color:#fff}
   #planesCtl{position:fixed;top:8px;right:8px;display:none;flex-direction:column;z-index:1200;background:rgba(10,22,38,.94);border:1px solid #1f3650;border-radius:10px;padding:7px 10px;color:#dfeaf5;font-size:11.5px;width:216px;box-shadow:0 4px 16px rgba(0,0,0,.5)}
   #ctlHead{display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer;user-select:none}
   #ctlHead b{color:#16e0ff;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
@@ -125,6 +127,7 @@
 </div>
 <div id="statsPanel"></div>
 <div id="zoneZoom"><button id="zZoomIn">+</button><button id="zZoomOut">&minus;</button></div>
+<button id="btnPan" title="Sposta la vista (pan) invece di ruotare">Sposta</button>
 <button id="btnSnap" title="Salva immagine PNG della scena 3D">PNG</button>
 <div id="planesCtl">
   <div id="ctlHead"><b>Controlli 3D</b><button id="ctlToggle" title="Comprimi/espandi">&#9662;</button></div>
@@ -485,9 +488,13 @@ try {
     return {lats,lons,zz,rows,cols,bb:{latS,latN,lonW,lonE}};
   }
   async function build3D(latS,latN,lonW,lonE){
-    const cx=(lonW+lonE)/2, cy=(latS+latN)/2, MAX=3.0, MIN=0.05;  // MIN basso: selezioni strette -> alta risoluzione (cratere visibile)
-    if(lonE-lonW>MAX){ lonW=cx-MAX/2; lonE=cx+MAX/2; } if(latN-latS>MAX){ latS=cy-MAX/2; latN=cy+MAX/2; }
-    if(lonE-lonW<MIN){ lonW=cx-MIN/2; lonE=cx+MIN/2; } if(latN-latS<MIN){ latS=cy-MIN/2; latN=cy+MIN/2; }
+    const cx=(lonW+lonE)/2, cy=(latS+latN)/2, MAX=3.0, MIN=0.05;  // MIN basso: selezioni strette -> alta risoluzione
+    // Scala PROPORZIONALE (preserva l'aspetto del rettangolo disegnato, niente piu' "sempre quadrato"):
+    // ingrandisce se la dim minore < MIN, riduce se la dim maggiore > MAX. Su aspetti estremi vince MAX (cap area).
+    let dlon=lonE-lonW, dlat=latN-latS; const small=Math.min(dlon,dlat), big=Math.max(dlon,dlat); let scale=1;
+    if(small<MIN) scale=MIN/small;
+    if(big*scale>MAX) scale=MAX/big;
+    if(scale!==1){ dlon*=scale; dlat*=scale; lonW=cx-dlon/2; lonE=cx+dlon/2; latS=cy-dlat/2; latN=cy+dlat/2; }
     latS=Math.max(30.2,latS);latN=Math.min(46,latN);lonW=Math.max(-6,lonW);lonE=Math.min(36.5,lonE);
     $('loadtxt').textContent='Carico il 3D dei fondali…'; $('loading').style.display='flex';
     try{
@@ -528,6 +535,7 @@ try {
   }
   let cur3d=null, seabedStyle='classic', lastGrid=null, boat3d=null, section3d={a:null,b:null};   // seabedStyle: 'classic' (2 superfici) | 'rotta' (superficie unica topografica); boat3d={lon,lat} = sonda; section3d = estremi A/B della sezione batimetrica
   let boatGpsMode=false, gps3dLast=0;   // barca GPS live in 3D: da onPos aggiorna boat3d (throttle 1.5s)
+  let dragPan=false;   // interazione scena 3D: false=ruota (turntable), true=sposta (pan)
   function buildPlanes(){
     if(!cur3d || !$('planesOn').checked) return [];
     const step=Math.max(50,parseInt($('planesStep').value,10)||500), bb=cur3d.bb, tr=[];
@@ -796,7 +804,7 @@ try {
           extra.push({type:'scatter3d',x:cs.X,y:cs.Y,z:cz,mode:'lines',line:{color:'#20140a',width:3},name:'linea di costa',hoverinfo:'skip'}); }
       }catch(e){}
     }
-    $('zone').style.display='block'; $('btnBack3d').style.display='block'; $('btnSnap').style.display='block';
+    $('zone').style.display='block'; $('btnBack3d').style.display='block'; $('btnSnap').style.display='block'; $('btnPan').style.display='block';
     $('zoneZoom').style.display='flex'; $('planesCtl').style.display='flex'; $('tools').style.display='none'; $('title').style.display='none';
     // aspect X:Y proporzionale alle DISTANZE REALI al suolo (no distorsione, corrisponde alla carta)
     const xDist=Math.max(1000,(g.bb.lonE-g.bb.lonW)*111320*Math.cos((g.bb.latS+g.bb.latN)/2*Math.PI/180));
@@ -811,7 +819,7 @@ try {
     // gestiti dalla checkbox #wallsOn (default nascosti). Il pavimento (piano x-y, zaxis) resta sempre spento: inutile.
     const showWalls=$('wallsOn').checked;
     const layout={paper_bgcolor:'#06121f',margin:{l:0,r:0,t:0,b:0},showlegend:false,
-      scene:{aspectmode:'manual',aspectratio:{x:aspX,y:aspY,z:aspZ},camera:{eye:veEye},
+      scene:{aspectmode:'manual',aspectratio:{x:aspX,y:aspY,z:aspZ},camera:{eye:veEye},dragmode:(dragPan?'pan':'turntable'),
         xaxis:sideAxis(showWalls),
         yaxis:sideAxis(showWalls),
         zaxis: useTopo ? {visible:true,title:{text:'quota m'},color:'#8fb0cc',gridcolor:'#153049',zerolinecolor:'#2c6b8a',showbackground:false}
@@ -852,7 +860,7 @@ try {
     if($('statsOn').checked) toggleStats();   // ricalcola le statistiche sulla nuova area
   }
   $('btnBack3d').onclick=()=>{ $('zone').style.display='none'; $('btnBack3d').style.display='none';
-    $('zoneZoom').style.display='none'; $('planesCtl').style.display='none'; $('zoneReadout').style.display='none'; $('sectionPanel').style.display='none'; $('statsPanel').style.display='none'; $('btnSnap').style.display='none'; $('tools').style.display='flex'; $('title').style.display='block'; window.MLP.zoneOpen=false; };
+    $('zoneZoom').style.display='none'; $('planesCtl').style.display='none'; $('zoneReadout').style.display='none'; $('sectionPanel').style.display='none'; $('statsPanel').style.display='none'; $('btnSnap').style.display='none'; $('btnPan').style.display='none'; $('tools').style.display='flex'; $('title').style.display='block'; window.MLP.zoneOpen=false; };
   // Header comprimibile del pannello controlli 3D (utile su mobile: libera spazio)
   $('ctlToggle').onclick=()=>{ const b=$('planesBody'), open=b.style.display!=='none';
     b.style.display=open?'none':'flex'; $('ctlToggle').innerHTML=open?'&#9656;':'&#9662;'; };
@@ -883,6 +891,11 @@ try {
     if(boatGpsMode){ if(watchId==null) startGps(); readout3dHint('Barca GPS live: la scena seguira&rsquo; la tua posizione reale'); } };
   // Export PNG della scena 3D corrente
   $('btnSnap').onclick=()=>{ if(window.Plotly && $('zone')) Plotly.downloadImage('zone',{format:'png',filename:'marenav3d_fondale',width:1600,height:1100}); };
+  // Sposta/Ruota: commuta l'interazione della scena 3D (pan sposta e ricentra la vista; turntable ruota attorno al centro).
+  $('btnPan').onclick=()=>{ dragPan=!dragPan; const dm=dragPan?'pan':'turntable';
+    $('btnPan').textContent=dragPan?'Ruota':'Sposta'; $('btnPan').classList.toggle('active',dragPan);
+    if(cur3d){ cur3d.layout.scene.dragmode=dm; Plotly.relayout('zone',{'scene.dragmode':dm}); }
+    readout3dHint(dragPan?'Modalit&agrave; Sposta: trascina per spostare la vista':'Modalit&agrave; Ruota: trascina per ruotare'); };
   // Ombreggiatura rilievo (hillshade): toggle + azimut sole (riga Sole visibile solo se attiva).
   $('shadeOn').onchange=()=>{ $('rowSun').style.display=$('shadeOn').checked?'flex':'none'; applyShading(); };
   $('sunAz').oninput=()=>{ $('sunAzVal').innerHTML=(parseInt($('sunAz').value,10)||0)+'&deg;'; if($('shadeOn').checked) applyShading(); };

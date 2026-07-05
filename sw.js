@@ -1,7 +1,7 @@
 // MareNav3D - service worker: precache app (offline); cache-first per CDN (MapLibre GL / pmtiles / Protomaps basemaps / Plotly / geotiff)
 // v3: HTML network-first (app sempre aggiornata online), CDN/icone cache-first; rotte/tracce/catture in localStorage
 // NB: i .pmtiles e le richieste Range passano diretti alla rete (vedi fetch handler) - non vanno in cache
-const CACHE = 'marenav3d-v20';
+const CACHE = 'marenav3d-v21';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'
 ];

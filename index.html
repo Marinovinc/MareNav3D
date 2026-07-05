@@ -865,6 +865,7 @@ try {
     const zoneEl=$('zone');
     zoneEl.on('plotly_hover', updateZoneReadout);
     zoneEl.on('plotly_click', ev=>{ updateZoneReadout(ev); if($('sectionOn').checked) handleSectionClick(ev); else placeBoatFromEvent(ev); });
+    zoneEl.on('plotly_relayout', panReloadCheck);   // drag-and-reload in modalita' Sposta
     $('zoneReadout').innerHTML='Muovi il puntatore sul fondale per leggere la profondità';
     $('zoneReadout').style.display='block';
     $('loading').style.display='none';
@@ -907,7 +908,7 @@ try {
   $('btnPan').onclick=()=>{ dragPan=!dragPan; const dm=dragPan?'pan':'turntable';
     $('btnPan').textContent=dragPan?'Ruota':'Sposta'; $('btnPan').classList.toggle('active',dragPan);
     if(cur3d){ cur3d.layout.scene.dragmode=dm; Plotly.relayout('zone',{'scene.dragmode':dm}); }
-    readout3dHint(dragPan?'Modalit&agrave; Sposta: trascina per spostare la vista':'Modalit&agrave; Ruota: trascina per ruotare'); };
+    readout3dHint(dragPan?'Modalit&agrave; Sposta: trascina per spostare &middot; oltre il bordo carica nuovi fondali':'Modalit&agrave; Ruota: trascina per ruotare'); };
   // Pan-and-reload: sposta l'area 3D di ~60% verso una direzione e RICARICA la batimetria dell'area confinante.
   function shift3D(dj,di){ if(!lastGrid || $('loading').style.display==='flex') return;
     const bb=lastGrid.bb, dlon=bb.lonE-bb.lonW, dlat=bb.latN-bb.latS, F=0.6;
@@ -915,6 +916,21 @@ try {
     build3D(bb.latS+sLat, bb.latN+sLat, bb.lonW+sLon, bb.lonE+sLon); }
   $('nav3dN').onclick=()=>shift3D(0,1); $('nav3dS').onclick=()=>shift3D(0,-1);
   $('nav3dE').onclick=()=>shift3D(1,0); $('nav3dW').onclick=()=>shift3D(-1,0);
+  // Drag-and-reload: in modalita' Sposta, se il trascinamento sposta la camera oltre ~40% dell'area,
+  // ricarica la batimetria del settore su cui ti sei spostato. Scatta a fine trascinamento (plotly_relayout).
+  function panReloadCheck(){
+    if(!dragPan || !cur3d || $('loading').style.display==='flex') return;
+    const el=$('zone'), sc=el&&el._fullLayout&&el._fullLayout.scene; if(!sc) return;
+    const cam=(sc._scene&&sc._scene.getCamera)?sc._scene.getCamera():sc.camera; if(!cam||!cam.center) return;
+    const bb=cur3d.bb, dlon=bb.lonE-bb.lonW, dlat=bb.latN-bb.latS;
+    const asp=cur3d.layout.scene.aspectratio, aspX=asp.x||1, aspY=asp.y||1;
+    const gLon=(cam.center.x/aspX)*dlon, gLat=(cam.center.y/aspY)*dlat, TH=0.4;
+    if(Math.abs(gLon)>TH*dlon || Math.abs(gLat)>TH*dlat){
+      const cx=(bb.lonW+bb.lonE)/2+gLon, cy=(bb.latS+bb.latN)/2+gLat;
+      build3D(cy-dlat/2, cy+dlat/2, cx-dlon/2, cx+dlon/2);
+    }
+  }
+  window.MLP._panCheck=panReloadCheck;   // hook per test
   // Ombreggiatura rilievo (hillshade): toggle + azimut sole (riga Sole visibile solo se attiva).
   $('shadeOn').onchange=()=>{ $('rowSun').style.display=$('shadeOn').checked?'flex':'none'; applyShading(); };
   $('sunAz').oninput=()=>{ $('sunAzVal').innerHTML=(parseInt($('sunAz').value,10)||0)+'&deg;'; if($('shadeOn').checked) applyShading(); };

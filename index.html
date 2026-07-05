@@ -1037,7 +1037,15 @@ try {
     map.addLayer({id:'rect3d',type:'fill',source:'rect3d',paint:{'fill-color':'#ffd24a','fill-opacity':0.15,'fill-outline-color':'#ffd24a'}});
   });
 
-  map.on('error', e=>showErr('MapLibre: '+(e&&e.error?e.error.message:'errore sorgente/tile')));
+  // Degrado grazioso: se la BASE VETTORIALE (PMTiles) non e' disponibile (es. online senza il file, che va su R2),
+  // MapLibre emette "Bad response code: 404" ad ogni tile. Non e' un errore per l'utente: la batimetria EMODnet e la scena 3D
+  // funzionano lo stesso. Sopprimiamo l'errore rosso e mostriamo un avviso soft una sola volta (niente localita'/strade).
+  map.on('error', e=>{ const msg=(e&&e.error&&e.error.message)||'';
+    if(/pmtiles|capri_ostia|Bad response code:\s*404/i.test(msg)){
+      if(!window.MLP._baseWarn){ window.MLP._baseWarn=true;
+        const s=document.querySelector('#title small'); if(s) s.innerHTML='carta nautica &middot; <span style="color:#ffd54a">solo batimetria</span> (base non disponibile qui)'; }
+      return; }
+    showErr('MapLibre: '+(msg||'errore sorgente/tile')); });
   map.on('idle', ()=>{ window.MLP.ready = true; });
 } catch(e){ showErr('INIT: '+e.message); }
 </script>

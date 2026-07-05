@@ -924,7 +924,7 @@ try {
     const cam=(sc._scene&&sc._scene.getCamera)?sc._scene.getCamera():sc.camera; if(!cam||!cam.center) return;
     const bb=cur3d.bb, dlon=bb.lonE-bb.lonW, dlat=bb.latN-bb.latS;
     const asp=cur3d.layout.scene.aspectratio, aspX=asp.x||1, aspY=asp.y||1;
-    const gLon=(cam.center.x/aspX)*dlon, gLat=(cam.center.y/aspY)*dlat, TH=0.4;
+    const gLon=(cam.center.x/aspX)*dlon, gLat=(cam.center.y/aspY)*dlat, TH=0.1;   // 10% dell'area: scatta con un trascinamento leggero
     if(Math.abs(gLon)>TH*dlon || Math.abs(gLat)>TH*dlat){
       const cx=(bb.lonW+bb.lonE)/2+gLon, cy=(bb.latS+bb.latN)/2+gLat;
       build3D(cy-dlat/2, cy+dlat/2, cx-dlon/2, cx+dlon/2);

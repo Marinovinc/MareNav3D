@@ -6,8 +6,10 @@ __pycache__/
 !data/_generate_data.py
 _*.jpg
 _*.js
-# tile vettoriali (grandi, vanno su R2/object storage, non nel repo)
+# tile vettoriali grandi (in produzione vanno su R2/object storage)
 *.pmtiles
+# eccezione: capri_ostia (~62 MB) servito da GitHub Pages come base vettoriale DEV finche' non e' su R2 (sotto il limite 100 MB/file di Pages)
+!capri_ostia.pmtiles
 # archivio versioni Leaflet obsolete (storico locale, non pubblicare)
 _archive_leaflet/
 # backup con timestamp (locali, non pubblicare)

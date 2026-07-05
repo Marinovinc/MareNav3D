@@ -865,7 +865,6 @@ try {
     const zoneEl=$('zone');
     zoneEl.on('plotly_hover', updateZoneReadout);
     zoneEl.on('plotly_click', ev=>{ updateZoneReadout(ev); if($('sectionOn').checked) handleSectionClick(ev); else placeBoatFromEvent(ev); });
-    zoneEl.on('plotly_relayout', panReloadCheck);   // drag-and-reload in modalita' Sposta
     $('zoneReadout').innerHTML='Muovi il puntatore sul fondale per leggere la profondità';
     $('zoneReadout').style.display='block';
     $('loading').style.display='none';
@@ -918,19 +917,25 @@ try {
   $('nav3dE').onclick=()=>shift3D(1,0); $('nav3dW').onclick=()=>shift3D(-1,0);
   // Drag-and-reload: in modalita' Sposta, se il trascinamento sposta la camera oltre ~40% dell'area,
   // ricarica la batimetria del settore su cui ti sei spostato. Scatta a fine trascinamento (plotly_relayout).
-  function panReloadCheck(){
+  // Basato sul TRASCINAMENTO IN PIXEL dello schermo (non sul centro-camera): la camera inclinata sperpera il drag
+  // verticale nella quota, rendendo il N/S poco reattivo. Qui orizzontale->E/W e verticale->N/S in modo simmetrico.
+  // fx,fy = frazione di schermo trascinata (dx/larghezza, dy/altezza). Grab-style: destra->W, sinistra->E, giu'->N, su'->S.
+  function panReloadFromFrac(fx,fy){
     if(!dragPan || !cur3d || $('loading').style.display==='flex') return;
-    const el=$('zone'), sc=el&&el._fullLayout&&el._fullLayout.scene; if(!sc) return;
-    const cam=(sc._scene&&sc._scene.getCamera)?sc._scene.getCamera():sc.camera; if(!cam||!cam.center) return;
-    const bb=cur3d.bb, dlon=bb.lonE-bb.lonW, dlat=bb.latN-bb.latS;
-    const asp=cur3d.layout.scene.aspectratio, aspX=asp.x||1, aspY=asp.y||1;
-    const gLon=(cam.center.x/aspX)*dlon, gLat=(cam.center.y/aspY)*dlat, TH=0.1;   // 10% dell'area: scatta con un trascinamento leggero
-    if(Math.abs(gLon)>TH*dlon || Math.abs(gLat)>TH*dlat){
+    const bb=cur3d.bb, dlon=bb.lonE-bb.lonW, dlat=bb.latN-bb.latS, TH=0.07;   // 7% dello schermo: reattivo su tutte le direzioni
+    if(Math.abs(fx)>TH || Math.abs(fy)>TH){
+      const gLon=-fx*dlon, gLat=fy*dlat;
       const cx=(bb.lonW+bb.lonE)/2+gLon, cy=(bb.latS+bb.latN)/2+gLat;
       build3D(cy-dlat/2, cy+dlat/2, cx-dlon/2, cx+dlon/2);
     }
   }
-  window.MLP._panCheck=panReloadCheck;   // hook per test
+  window.MLP._panDrag=panReloadFromFrac;   // hook test (frazioni schermo)
+  (function(){ const z=$('zone'); let dn=null;   // traccia il drag in modalita' Sposta -> ricarica al rilascio
+    z.addEventListener('pointerdown', e=>{ if(dragPan && e.isPrimary) dn={x:e.clientX,y:e.clientY}; }, true);
+    z.addEventListener('pointerup', e=>{ if(dragPan && dn){ const r=z.getBoundingClientRect();
+      panReloadFromFrac((e.clientX-dn.x)/(r.width||1),(e.clientY-dn.y)/(r.height||1)); } dn=null; }, true);
+    z.addEventListener('pointercancel', ()=>{ dn=null; }, true);
+  })();
   // Ombreggiatura rilievo (hillshade): toggle + azimut sole (riga Sole visibile solo se attiva).
   $('shadeOn').onchange=()=>{ $('rowSun').style.display=$('shadeOn').checked?'flex':'none'; applyShading(); };
   $('sunAz').oninput=()=>{ $('sunAzVal').innerHTML=(parseInt($('sunAz').value,10)||0)+'&deg;'; if($('shadeOn').checked) applyShading(); };

@@ -668,7 +668,8 @@ try {
     return [{type:'scatter3d',mode:'markers',x:x,y:y,z:z,name:'isobata '+from+'-'+to+' m',
       marker:{size:2.7,color:'#8dff3a',opacity:0.85},hovertemplate:'fascia <b>'+from+'&ndash;'+to+' m</b><extra></extra>'}];
   }
-  function render3DScene(){ if(cur3d) Plotly.react('zone',[...cur3d.base,...seaLevelTrace(),...boat3dTraces(),...section3dTraces(),...isobandTraces(),...upwellTraces(),...buildPlanes()],cur3d.layout,{displayModeBar:false,responsive:true,doubleClick:false}); }
+  function render3DScene(){ if(!cur3d) return; const lc=liveCamera(); if(lc) cur3d.layout.scene.camera=lc;   // preserva la vista corrente
+    Plotly.react('zone',[...cur3d.base,...seaLevelTrace(),...boat3dTraces(),...section3dTraces(),...isobandTraces(),...upwellTraces(),...buildPlanes()],cur3d.layout,{displayModeBar:false,responsive:true,doubleClick:false}); }
   // Ombreggiatura rilievo (hillshade): luce radente regolabile per azimut del sole -> scarpate/canyon in risalto.
   function sunLightPos(az){ const r=(az||0)*Math.PI/180, R=300; return {x:Math.cos(r)*R, y:Math.sin(r)*R, z:500}; }
   function shadeParams(){ const on=$('shadeOn').checked;
@@ -756,6 +757,10 @@ try {
     boat3d={lon:pt.x, lat:pt.y}; render3DScene();
   }
   async function show3D(g){
+    // Preserva la vista: stessa area ridisegnata (toggle) -> mantieni tutto; nuova area (nav/drag) -> mantieni ANGOLO e ZOOM, ricentra.
+    const _lc=liveCamera();
+    const keepCam = (g===lastGrid) ? _lc
+      : (_lc ? {up:_lc.up, center:{x:0,y:0,z:0}, eye:{x:_lc.eye.x-_lc.center.x, y:_lc.eye.y-_lc.center.y, z:_lc.eye.z-_lc.center.z}} : null);
     removeCurtains(g); window.MLP.decurtain=g._decurtain; window.MLP.decurtainEdge=g._decurtainEdge;   // togli le tende verticali artefatte (bordi inclusi) prima di costruire le superfici
     lastGrid=g; window.MLP.lastBBox=g.bb;   // memorizza griglia + bbox (per riprodurre l'area esatta in caso di artefatti: leggere MLP.lastBBox in console)
     const useTopo=(seabedStyle==='rotta');
@@ -835,7 +840,7 @@ try {
     // gestiti dalla checkbox #wallsOn (default nascosti). Il pavimento (piano x-y, zaxis) resta sempre spento: inutile.
     const showWalls=$('wallsOn').checked;
     const layout={paper_bgcolor:'#06121f',margin:{l:0,r:0,t:0,b:0},showlegend:false,
-      scene:{aspectmode:'manual',aspectratio:{x:aspX,y:aspY,z:aspZ},camera:{eye:veEye},dragmode:(dragPan?'pan':'turntable'),
+      scene:{aspectmode:'manual',aspectratio:{x:aspX,y:aspY,z:aspZ},camera:(keepCam||{eye:veEye}),dragmode:(dragPan?'pan':'turntable'),
         xaxis:sideAxis(showWalls),
         yaxis:sideAxis(showWalls),
         zaxis: useTopo ? {visible:true,title:{text:'quota m'},color:'#8fb0cc',gridcolor:'#153049',zerolinecolor:'#2c6b8a',showbackground:false}
@@ -982,6 +987,13 @@ try {
     const a=cur3d.layout.scene.aspectratio;
     const cv=(v,r0,r1,asp)=>{ const mid=(r0+r1)/2, rng=(r1-r0)||1; return (v-mid)/rng*(asp||2); };
     return {x:cv(px,cur3d.bb.lonW,cur3d.bb.lonE,a.x), y:cv(py,cur3d.bb.latS,cur3d.bb.latN,a.y), z:cv(pz,cur3d.zmin,cur3d.zmax,a.z)};
+  }
+  // Camera LIVE corrente (eye/center/up) -> per PRESERVARE la vista quando si ridisegna la scena (toggle, overlay, ecc.)
+  function liveCamera(){
+    const el=$('zone'), sc=el&&el._fullLayout&&el._fullLayout.scene; if(!sc) return null;
+    const cam=(sc._scene&&sc._scene.getCamera)?sc._scene.getCamera():sc.camera; if(!cam||!cam.eye||!cam.center) return null;
+    const up=cam.up||{x:0,y:0,z:1};
+    return {eye:{x:cam.eye.x,y:cam.eye.y,z:cam.eye.z}, center:{x:cam.center.x,y:cam.center.y,z:cam.center.z}, up:{x:up.x,y:up.y,z:up.z}};
   }
   // Zoom VERSO IL CURSORE: scala eye+center attorno al punto sotto il puntatore (lastHoverPt) -> quel punto resta fermo.
   // Se non c'e' un punto sotto il cursore, ripiega sul centro (comportamento precedente).

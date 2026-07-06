@@ -706,10 +706,12 @@ try {
     if(a&&b) f.push({type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[a.lon,a.lat],[b.lon,b.lat]]}});
     src.setData({type:'FeatureCollection',features:f});
   }
+  let lastZonePx={x:0,y:0};   // ultimo pixel di click sul canvas 3D: robusto (ev.event su alcuni click gl3d non ha clientX)
+  $('zone').addEventListener('pointerdown', e=>{ const zr=$('zone').getBoundingClientRect(); lastZonePx={x:e.clientX-zr.left, y:e.clientY-zr.top}; }, true);
   function handleSectionClick(ev){
     const pt=ev&&ev.points&&ev.points.find(p=>p.data&&p.data.type==='surface'); if(!pt||pt.x==null||pt.y==null) return;
-    const zr=$('zone').getBoundingClientRect(), me=ev.event||{};
-    const px=(me.clientX!=null?me.clientX:0)-zr.left, py=(me.clientY!=null?me.clientY:0)-zr.top;   // pixel del click (solo overlay 2D)
+    let px=lastZonePx.x, py=lastZonePx.y;
+    const me=ev.event; if(me && me.clientX!=null){ const zr=$('zone').getBoundingClientRect(); px=me.clientX-zr.left; py=me.clientY-zr.top; }   // preferisci il pixel dell'evento se presente
     if(!section3d.a || (section3d.a && section3d.b)){ section3d={a:{lon:pt.x,lat:pt.y,px:px,py:py},b:null}; $('sectionPanel').style.display='none'; readout3dHint('Sezione: punto <b>A</b> segnato &middot; tocca il punto <b>B</b>'); drawSectionOverlay(); }
     else { section3d.b={lon:pt.x,lat:pt.y,px:px,py:py}; drawSectionOverlay(); showSectionProfile(); drawSectionOnMap(); readout3dHint('Sezione <b>A</b>&ndash;<b>B</b> tracciata &middot; tocca di nuovo per rifarla'); }   // B definito -> calcolo automatico del profilo (2D, nessun tocco al 3D)
   }

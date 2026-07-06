@@ -54,6 +54,7 @@
   #btnSnap{position:fixed;right:8px;bottom:148px;display:none;z-index:1200;width:40px;height:34px;border-radius:8px;border:1px solid #1f3650;background:rgba(10,22,38,.94);color:#16e0ff;font-size:11px;font-weight:700;cursor:pointer}
   #btnPan{position:fixed;right:8px;bottom:188px;display:none;z-index:1200;width:52px;height:34px;border-radius:8px;border:1px solid #1f3650;background:rgba(10,22,38,.94);color:#dfeaf5;font-size:11px;font-weight:700;cursor:pointer}
   #zReset{position:fixed;right:8px;bottom:228px;display:none;z-index:1200;width:52px;height:34px;border-radius:8px;border:1px solid #1f3650;background:rgba(10,22,38,.94);color:#16e0ff;font-size:11px;font-weight:700;cursor:pointer}
+  #btnDetail{position:fixed;right:8px;bottom:268px;display:none;z-index:1200;width:62px;height:34px;border-radius:8px;border:1px solid #16e0ff;background:rgba(16,40,64,.94);color:#8dff3a;font-size:10.5px;font-weight:700;cursor:pointer}
   #btnPan.active{background:#1e3a63;border-color:#16e0ff;color:#fff}
   #nav3d{position:fixed;left:8px;top:50%;transform:translateY(-50%);display:none;z-index:1200;grid-template-columns:repeat(3,34px);grid-template-rows:repeat(3,34px);gap:3px}
   #nav3d button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;border:1px solid #1f3650;background:rgba(10,22,38,.9);color:#16e0ff;border-radius:7px;cursor:pointer;padding:0;line-height:1}
@@ -134,6 +135,7 @@
 </div>
 <div id="statsPanel"></div>
 <div id="zoneZoom"><button id="zZoomIn">+</button><button id="zZoomOut">&minus;</button></div>
+<button id="btnDetail" title="Carica il dettaglio della zona inquadrata (alta risoluzione)">Dettaglio</button>
 <button id="zReset" title="Reset vista (posizione di default)">&#8635; Vista</button>
 <button id="btnPan" title="Sposta la vista (pan) invece di ruotare">Sposta</button>
 <button id="btnSnap" title="Salva immagine PNG della scena 3D">PNG</button>
@@ -201,6 +203,9 @@ const $=id=>document.getElementById(id);
 
 // ---- profondita' al tocco: WCS EMODnet + GeoTIFF (stessa logica dell'app Leaflet, motore-agnostica) ----
 const NATIVE_RES=0.0010416666666666667;
+const DETAIL_CAP=480;   // max celle per lato del fondale 3D (alzato da 360): bilanciamento dettaglio/performance
+// densita' ADATTIVA: punta al nativo EMODnet (~0.001°) con cap di performance -> aree piccole molto dettagliate, grandi limitate
+function detailCells(spanDeg){ return Math.max(160, Math.min(DETAIL_CAP, Math.round(spanDeg/NATIVE_RES))); }
 const WCS_URL='https://ows.emodnet-bathymetry.eu/wcs?service=WCS&version=2.0.1&request=GetCoverage&coverageId=emodnet__mean&format=image/tiff';
 function fetchTO(url,ms){ const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(),ms); return fetch(url,{signal:ctl.signal}).finally(()=>clearTimeout(t)); }
 async function fetchTile(latS,latN,lonW,lonE,maxpx){
@@ -415,7 +420,8 @@ try {
   $('btnCatch').onclick=()=>setMode('catch');
 
   // ============ M3: scena 3D (riuso Plotly, come l'app Leaflet / ROTTA_A_3D) ============
-  async function fetchGridSingle(latS,latN,lonW,lonE){ const t=await fetchTile(latS,latN,lonW,lonE,300);
+  async function fetchGridSingle(latS,latN,lonW,lonE){ const px=detailCells(Math.max(lonE-lonW,latN-latS));   // densita' adattiva (era fisso 300)
+    const t=await fetchTile(latS,latN,lonW,lonE,px);
     return gridFromRaster(t.data,t.w,t.h,{latS,latN,lonW,lonE}); }
   async function fetchGridTiled(latS,latN,lonW,lonE){
     const dlon=lonE-lonW,dlat=latN-latS,res=0.04,cols=Math.min(420,Math.round(dlon/res)),rows=Math.min(420,Math.round(dlat/res));
@@ -488,13 +494,13 @@ try {
   // griglia densa: terra da Terrarium (quota>0), mare da EMODnet (g)
   function mergeLandSea(latS,latN,lonW,lonE,g,terr){
     const widthM=(lonE-lonW)*111320*Math.cos((latS+latN)/2*Math.PI/180), heightM=(latN-latS)*110574;
-    const cols=Math.max(60,Math.min(360,Math.round(widthM/25))), rows=Math.max(60,Math.min(360,Math.round(heightM/25)));
+    const cols=Math.max(160,Math.min(DETAIL_CAP,Math.round(widthM/20))), rows=Math.max(160,Math.min(DETAIL_CAP,Math.round(heightM/20)));
     const lats=[],lons=[],zz=[], dlat=(latN-latS)/(rows-1), dlon=(lonE-lonW)/(cols-1);
     for(let i=0;i<rows;i++) lats.push(+(latN-i*dlat).toFixed(5));
     for(let j=0;j<cols;j++) lons.push(+(lonW+j*dlon).toFixed(5));
     for(let i=0;i<rows;i++){ const lat=lats[i], row=new Array(cols);
       for(let j=0;j<cols;j++){ const lon=lons[j]; const te=terr?terr.elevAt(lat,lon):null; let z;
-        const se=gridDepth(g,lat,lon);
+        const se=gridDepthBilinear(g,lat,lon);   // bilineare -> superficie liscia (#4)
         if(te!=null && te>0.5 && (se==null || se>=0)){ z=te; }   // terra: Terrarium SOLO dove anche EMODnet non e' acqua (se>=0): l'acqua bassa misurata resta mare, non viene ribaltata in terra
         else if(se!=null){ z=se; } else { z=(te!=null?te:null); }  // mare/costa: EMODnet
         row[j]=(z!=null && z>-12000 && z<9000)?z:null; }
@@ -528,6 +534,17 @@ try {
     const i=Math.round((g.bb.latN-lat)/((g.bb.latN-g.bb.latS)/(g.rows-1)));
     const j=Math.round((lon-g.bb.lonW)/((g.bb.lonE-g.bb.lonW)/(g.cols-1)));
     if(i<0||i>=g.rows||j<0||j>=g.cols) return null; return g.zz[i][j];
+  }
+  // Campionamento BILINEARE (smussatura #4): interpola tra i 4 vicini invece del nearest -> niente "gradini".
+  // Vicino a buchi/costa (qualche vicino null) ripiega su nearest per non introdurre NaN.
+  function gridDepthBilinear(g, lat, lon){
+    if(lat>g.bb.latN||lat<g.bb.latS||lon<g.bb.lonW||lon>g.bb.lonE) return null;
+    const fi=(g.bb.latN-lat)/((g.bb.latN-g.bb.latS)/(g.rows-1)), fj=(lon-g.bb.lonW)/((g.bb.lonE-g.bb.lonW)/(g.cols-1));
+    let i0=Math.floor(fi), j0=Math.floor(fj); if(i0<0)i0=0; if(j0<0)j0=0;
+    const i1=Math.min(g.rows-1,i0+1), j1=Math.min(g.cols-1,j0+1), ti=fi-i0, tj=fj-j0;
+    const a=g.zz[i0][j0], b=g.zz[i0][j1], c=g.zz[i1][j0], d=g.zz[i1][j1];
+    if(a==null||b==null||c==null||d==null){ const i=Math.round(fi), j=Math.round(fj); return (i>=0&&i<g.rows&&j>=0&&j<g.cols)?g.zz[i][j]:null; }
+    const top=a+(b-a)*tj, bot=c+(d-c)*tj; return top+(bot-top)*ti;
   }
   function fmtLat(v){ return Math.abs(v).toFixed(4)+'° '+(v>=0?'N':'S'); }
   function fmtLon(v){ return Math.abs(v).toFixed(4)+'° '+(v>=0?'E':'W'); }
@@ -825,7 +842,7 @@ try {
           extra.push({type:'scatter3d',x:cs.X,y:cs.Y,z:cz,mode:'lines',line:{color:'#20140a',width:3},name:'linea di costa',hoverinfo:'skip'}); }
       }catch(e){}
     }
-    $('zone').style.display='block'; $('btnBack3d').style.display='block'; $('btnSnap').style.display='block'; $('btnPan').style.display='block'; $('zReset').style.display='block'; $('nav3d').style.display='grid';
+    $('zone').style.display='block'; $('btnBack3d').style.display='block'; $('btnSnap').style.display='block'; $('btnPan').style.display='block'; $('zReset').style.display='block'; $('btnDetail').style.display='block'; $('nav3d').style.display='grid';
     $('zoneZoom').style.display='flex'; $('planesCtl').style.display='flex'; $('tools').style.display='none'; $('title').style.display='none';
     // aspect X:Y proporzionale alle DISTANZE REALI al suolo (no distorsione, corrisponde alla carta)
     const xDist=Math.max(1000,(g.bb.lonE-g.bb.lonW)*111320*Math.cos((g.bb.latS+g.bb.latN)/2*Math.PI/180));
@@ -882,7 +899,7 @@ try {
     if($('statsOn').checked) toggleStats();   // ricalcola le statistiche sulla nuova area
   }
   $('btnBack3d').onclick=()=>{ $('zone').style.display='none'; $('btnBack3d').style.display='none';
-    $('zoneZoom').style.display='none'; $('planesCtl').style.display='none'; $('zoneReadout').style.display='none'; $('sectionPanel').style.display='none'; $('statsPanel').style.display='none'; $('btnSnap').style.display='none'; $('btnPan').style.display='none'; $('zReset').style.display='none'; $('nav3d').style.display='none'; $('tools').style.display='flex'; $('title').style.display='block'; window.MLP.zoneOpen=false; };
+    $('zoneZoom').style.display='none'; $('planesCtl').style.display='none'; $('zoneReadout').style.display='none'; $('sectionPanel').style.display='none'; $('statsPanel').style.display='none'; $('btnSnap').style.display='none'; $('btnPan').style.display='none'; $('zReset').style.display='none'; $('btnDetail').style.display='none'; $('nav3d').style.display='none'; $('tools').style.display='flex'; $('title').style.display='block'; window.MLP.zoneOpen=false; };
   // Header comprimibile del pannello controlli 3D (utile su mobile: libera spazio)
   $('ctlToggle').onclick=()=>{ const b=$('planesBody'), open=b.style.display!=='none';
     b.style.display=open?'none':'flex'; $('ctlToggle').innerHTML=open?'&#9656;':'&#9662;'; };
@@ -929,6 +946,21 @@ try {
     build3D(bb.latS+sLat, bb.latN+sLat, bb.lonW+sLon, bb.lonE+sLon); }
   $('nav3dN').onclick=()=>shift3D(0,1); $('nav3dS').onclick=()=>shift3D(0,-1);
   $('nav3dE').onclick=()=>shift3D(1,0); $('nav3dW').onclick=()=>shift3D(-1,0);
+  // Zoom-refine (#1): ricarica la ZONA INQUADRATA (piu' piccola quanto sei zoomato) ad alta risoluzione EMODnet.
+  function refineZone(){
+    if(!cur3d || $('loading').style.display==='flex') return;
+    const lc=liveCamera(); if(!lc) return;
+    const bb=cur3d.bb, dlon=bb.lonE-bb.lonW, dlat=bb.latN-bb.latS;
+    const dEC=Math.hypot(lc.eye.x-lc.center.x,lc.eye.y-lc.center.y,lc.eye.z-lc.center.z)||1e-6;
+    const Z=Math.max(1,(cur3d.d0||2.2)/dEC);   // livello di zoom
+    const a=cur3d.layout.scene.aspectratio;
+    const lonC=(bb.lonW+bb.lonE)/2+(lc.center.x/(a.x||2))*dlon;   // punto inquadrato (inverso di dataToScene)
+    const latC=(bb.latS+bb.latN)/2+(lc.center.y/(a.y||2))*dlat;
+    const nlon=Math.max(0.02,dlon/Z), nlat=Math.max(0.02,dlat/Z);
+    readout3dHint('Carico il dettaglio della zona&hellip;');
+    build3D(latC-nlat/2, latC+nlat/2, lonC-nlon/2, lonC+nlon/2);
+  }
+  $('btnDetail').onclick=refineZone;
   // Drag-and-reload: in modalita' Sposta, se il trascinamento sposta la camera oltre ~40% dell'area,
   // ricarica la batimetria del settore su cui ti sei spostato. Scatta a fine trascinamento (plotly_relayout).
   // Basato sul TRASCINAMENTO IN PIXEL dello schermo (non sul centro-camera): la camera inclinata sperpera il drag

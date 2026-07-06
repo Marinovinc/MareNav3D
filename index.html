@@ -500,7 +500,7 @@ try {
     for(let j=0;j<cols;j++) lons.push(+(lonW+j*dlon).toFixed(5));
     for(let i=0;i<rows;i++){ const lat=lats[i], row=new Array(cols);
       for(let j=0;j<cols;j++){ const lon=lons[j]; const te=terr?terr.elevAt(lat,lon):null; let z;
-        const se=gridDepthBilinear(g,lat,lon);   // bilineare -> superficie liscia (#4)
+        const se=gridDepthBicubic(g,lat,lon);   // bicubico -> superficie ancora piu' liscia (stima, con clamp anti-overshoot)
         if(te!=null && te>0.5 && (se==null || se>=0)){ z=te; }   // terra: Terrarium SOLO dove anche EMODnet non e' acqua (se>=0): l'acqua bassa misurata resta mare, non viene ribaltata in terra
         else if(se!=null){ z=se; } else { z=(te!=null?te:null); }  // mare/costa: EMODnet
         row[j]=(z!=null && z>-12000 && z<9000)?z:null; }
@@ -545,6 +545,21 @@ try {
     const a=g.zz[i0][j0], b=g.zz[i0][j1], c=g.zz[i1][j0], d=g.zz[i1][j1];
     if(a==null||b==null||c==null||d==null){ const i=Math.round(fi), j=Math.round(fj); return (i>=0&&i<g.rows&&j>=0&&j<g.cols)?g.zz[i][j]:null; }
     const top=a+(b-a)*tj, bot=c+(d-c)*tj; return top+(bot-top)*ti;
+  }
+  // Campionamento BICUBICO (Catmull-Rom, 4x4 vicini): curve piu' dolci della bilineare (continuita' di pendenza).
+  // NB: e' interpolazione (stima), non dato reale sotto i ~115 m EMODnet. Clamp al min/max del 4x4 -> niente picchi finti.
+  // Vicino a buchi/costa (qualche null nel 4x4) ripiega su bilineare.
+  function _cr(p0,p1,p2,p3,t){ return p1+0.5*t*(p2-p0+t*(2*p0-5*p1+4*p2-p3+t*(3*(p1-p2)+p3-p0))); }
+  function gridDepthBicubic(g, lat, lon){
+    if(lat>g.bb.latN||lat<g.bb.latS||lon<g.bb.lonW||lon>g.bb.lonE) return null;
+    const fi=(g.bb.latN-lat)/((g.bb.latN-g.bb.latS)/(g.rows-1)), fj=(lon-g.bb.lonW)/((g.bb.lonE-g.bb.lonW)/(g.cols-1));
+    const i1=Math.floor(fi), j1=Math.floor(fj), ti=fi-i1, tj=fj-j1;
+    const val=(i,j)=>{ i=i<0?0:(i>=g.rows?g.rows-1:i); j=j<0?0:(j>=g.cols?g.cols-1:j); return g.zz[i][j]; };
+    let mn=Infinity, mx=-Infinity;
+    for(let a=-1;a<=2;a++)for(let o=-1;o<=2;o++){ const v=val(i1+a,j1+o); if(v==null) return gridDepthBilinear(g,lat,lon); if(v<mn)mn=v; if(v>mx)mx=v; }
+    const col=[]; for(let a=-1;a<=2;a++) col.push(_cr(val(i1+a,j1-1),val(i1+a,j1),val(i1+a,j1+1),val(i1+a,j1+2), tj));
+    let r=_cr(col[0],col[1],col[2],col[3], ti);
+    return r<mn?mn:(r>mx?mx:r);   // clamp anti-overshoot (niente buche/bump inventati oltre i dati)
   }
   function fmtLat(v){ return Math.abs(v).toFixed(4)+'° '+(v>=0?'N':'S'); }
   function fmtLon(v){ return Math.abs(v).toFixed(4)+'° '+(v>=0?'E':'W'); }

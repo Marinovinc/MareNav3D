@@ -17,3 +17,6 @@ _archive_leaflet/
 # documento di progetto interno (roadmap/monetizzazione/path locali) - NON pubblicare su repo/Pages pubblici
 PROGETTO_MARENAV3D.md
 PROGETTO_MARENAV3D.html
+# handover/documentazione tecnica interni (errori confessati, note dev) - locali, NON pubblicare
+HANDOVER_SESSIONE_*.md
+DOCUMENTAZIONE_TECNICA_*.md

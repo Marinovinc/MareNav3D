@@ -672,19 +672,32 @@ try {
       const d=gridDepth(lastGrid,lat,lon); dist.push(+cum.toFixed(3)); dep.push(d==null?null:Math.round(d));
       if(d!=null){ if(d<mn)mn=d; if(d>mx)mx=d; } }
     const shallow=isFinite(mx)?Math.abs(Math.round(mx)):0, deep=isFinite(mn)?Math.abs(Math.round(mn)):0;
-    $('sectionInfo').innerHTML=cum.toFixed(2)+' nm &middot; fondale '+Math.min(shallow,deep)+'&ndash;'+Math.max(shallow,deep)+' m';
-    Plotly.newPlot('sectionChart',[{x:dist,y:dep,type:'scatter',mode:'lines',fill:'tozeroy',line:{color:'#16e0ff',width:2},fillcolor:'rgba(22,224,255,0.18)',hovertemplate:'%{x:.2f} nm &middot; %{y:.0f} m<extra></extra>'}],
+    $('sectionInfo').innerHTML='<b style="color:#ff5be0">A&ndash;B</b> &middot; '+cum.toFixed(2)+' nm &middot; fondale '+Math.min(shallow,deep)+'&ndash;'+Math.max(shallow,deep)+' m';
+    const ex=[],ey=[],et=[];   // marcatori A (inizio) e B (fine) agli estremi del profilo
+    if(dep[0]!=null){ ex.push(dist[0]); ey.push(dep[0]); et.push('A'); }
+    if(dep[dep.length-1]!=null){ ex.push(dist[dist.length-1]); ey.push(dep[dep.length-1]); et.push('B'); }
+    Plotly.newPlot('sectionChart',[{x:dist,y:dep,type:'scatter',mode:'lines',fill:'tozeroy',line:{color:'#16e0ff',width:2},fillcolor:'rgba(22,224,255,0.18)',hovertemplate:'%{x:.2f} nm &middot; %{y:.0f} m<extra></extra>'},
+      {x:ex,y:ey,type:'scatter',mode:'markers+text',text:et,textposition:'top center',textfont:{color:'#ff5be0',size:12},marker:{size:8,color:'#ff5be0',line:{color:'#fff',width:1}},hoverinfo:'skip',showlegend:false}],
       {margin:{l:40,r:8,t:4,b:24},paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',font:{color:'#8fb0cc',size:9},
        xaxis:{title:{text:'distanza (nm)',font:{size:9}},gridcolor:'#153049',zeroline:false,fixedrange:true},
        yaxis:{title:{text:'quota m',font:{size:9}},gridcolor:'#153049',zeroline:false,fixedrange:true}},
       {displayModeBar:false,responsive:true});
     $('sectionPanel').style.display='block';
   }
+  // Disegna la sezione (linea A-B + punti A/B) sulla cartina 2D MapLibre: leggero, indipendente dal 3D.
+  function drawSectionOnMap(){
+    const src=map.getSource('section_geo'); if(!src) return;
+    const a=section3d.a, b=section3d.b, f=[];
+    if(a) f.push({type:'Feature',properties:{id:'A'},geometry:{type:'Point',coordinates:[a.lon,a.lat]}});
+    if(b) f.push({type:'Feature',properties:{id:'B'},geometry:{type:'Point',coordinates:[b.lon,b.lat]}});
+    if(a&&b) f.push({type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[[a.lon,a.lat],[b.lon,b.lat]]}});
+    src.setData({type:'FeatureCollection',features:f});
+  }
   function handleSectionClick(ev){
     const pt=ev&&ev.points&&ev.points.find(p=>p.data&&p.data.type==='surface'); if(!pt||pt.x==null||pt.y==null) return;
     if(!section3d.a || (section3d.a && section3d.b)){ section3d={a:{lon:pt.x,lat:pt.y},b:null}; $('sectionPanel').style.display='none'; readout3dHint('Sezione: punto <b>A</b> impostato &middot; tocca il punto <b>B</b>'); }
     else { section3d.b={lon:pt.x,lat:pt.y}; showSectionProfile(); }
-    // niente ridisegno 3D: la sezione e' nel grafico 2D (evita lo stallo GPU)
+    drawSectionOnMap();   // linea/punti A-B sulla cartina 2D (no 3D -> no freeze)
   }
   // Isobata target: evidenzia con marker verde-lime le celle del fondale nella fascia di profondita' [from,to] m (sub-campionate uniformi).
   function isobandTraces(){
@@ -957,9 +970,9 @@ try {
   $('fractalOn').onchange=()=>{ if(lastGrid){ if($('fractalOn').checked) readout3dHint('Rilievo stimato: texture NON reale (solo estetica)');
     $('loadtxt').textContent='Ridisegno il fondale…'; $('loading').style.display='flex'; setTimeout(()=>show3D(lastGrid),30); } };
   // Sezione batimetrica: on -> attende 2 tap (A,B) sul fondale; off -> pulisce e chiude il grafico.
-  $('sectionOn').onchange=()=>{ section3d={a:null,b:null}; $('sectionPanel').style.display='none';
+  $('sectionOn').onchange=()=>{ section3d={a:null,b:null}; $('sectionPanel').style.display='none'; drawSectionOnMap();
     if($('sectionOn').checked) readout3dHint('Sezione batimetrica: tocca due punti sul fondale (<b>A</b> poi <b>B</b>)'); };
-  $('sectionClose').onclick=()=>{ $('sectionPanel').style.display='none'; section3d={a:null,b:null}; if($('sectionOn')) $('sectionOn').checked=false; };
+  $('sectionClose').onclick=()=>{ $('sectionPanel').style.display='none'; section3d={a:null,b:null}; if($('sectionOn')) $('sectionOn').checked=false; drawSectionOnMap(); };
   // Isobata target: evidenzia la fascia di profondita' scelta (riga fascia visibile solo se attiva).
   $('isobandOn').onchange=()=>{ $('rowIso').style.display=$('isobandOn').checked?'flex':'none'; render3DScene(); };
   $('isobandFrom').oninput=()=>{ if($('isobandOn').checked) render3DScene(); };
@@ -1103,7 +1116,7 @@ try {
   window.MLP.setBoat3d=(lon,lat)=>{ boat3d=(lon==null?null:{lon,lat}); render3DScene(); };   // hook per test barca (Task 4)
   window.MLP.getBoat3d=()=>boat3d;
   window.MLP.removeCurtains=removeCurtains;   // hook per test de-curtain bordi
-  window.MLP.setSection=(aLon,aLat,bLon,bLat)=>{ section3d={a:{lon:aLon,lat:aLat},b:{lon:bLon,lat:bLat}}; showSectionProfile(); };   // hook test sezione
+  window.MLP.setSection=(aLon,aLat,bLon,bLat)=>{ section3d={a:{lon:aLon,lat:aLat},b:{lon:bLon,lat:bLat}}; showSectionProfile(); drawSectionOnMap(); };   // hook test sezione
 
   window.MLP.setMode=setMode; window.MLP.getRuler=()=>rulerPts; window.MLP.getRoute=()=>routePts; window.MLP.gpsOn=()=>watchId!=null;
 
@@ -1196,6 +1209,13 @@ try {
     map.addLayer({id:'catches_n',type:'symbol',source:'catches',
       layout:{'text-field':['get','note'],'text-font':['Noto Sans Regular'],'text-size':10,'text-offset':[0,1.1]},
       paint:{'text-color':'#fff','text-halo-color':'#7a3d00','text-halo-width':1.2}});
+    // Sezione batimetrica: linea A-B + punti A/B sulla cartina 2D (leggero, indipendente dal 3D)
+    map.addSource('section_geo',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+    map.addLayer({id:'section_line',type:'line',source:'section_geo',filter:['==','$type','LineString'],paint:{'line-color':'#ff5be0','line-width':3,'line-dasharray':[2,1]}});
+    map.addLayer({id:'section_pts',type:'circle',source:'section_geo',filter:['==','$type','Point'],paint:{'circle-radius':6,'circle-color':'#ff5be0','circle-stroke-color':'#fff','circle-stroke-width':2}});
+    map.addLayer({id:'section_lbl',type:'symbol',source:'section_geo',filter:['==','$type','Point'],
+      layout:{'text-field':['get','id'],'text-font':['Noto Sans Regular'],'text-size':12,'text-offset':[0,-1.2]},
+      paint:{'text-color':'#ffffff','text-halo-color':'#a0009a','text-halo-width':1.4}});
     drawTrack(); drawCatches();
 
     // M3: rettangolo selezione area per i Fondali 3D

@@ -128,6 +128,7 @@
 </div>
 <div id="zone"></div>
 <svg id="sectionOverlay" style="position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;display:none;z-index:1150"></svg>
+<div id="zone3dov" style="position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;display:none;z-index:1155"></div>
 <button id="btnBack3d">&#8592; Carta</button>
 <div id="zoneReadout"></div>
 <div id="sectionPanel">
@@ -712,8 +713,8 @@ try {
     const pt=ev&&ev.points&&ev.points.find(p=>p.data&&p.data.type==='surface'); if(!pt||pt.x==null||pt.y==null) return;
     let px=lastZonePx.x, py=lastZonePx.y;
     const me=ev.event; if(me && me.clientX!=null){ const zr=$('zone').getBoundingClientRect(); px=me.clientX-zr.left; py=me.clientY-zr.top; }   // preferisci il pixel dell'evento se presente
-    if(!section3d.a || (section3d.a && section3d.b)){ section3d={a:{lon:pt.x,lat:pt.y,px:px,py:py},b:null}; $('sectionPanel').style.display='none'; readout3dHint('Sezione: punto <b>A</b> segnato &middot; tocca il punto <b>B</b>'); drawSectionOverlay(); }
-    else { section3d.b={lon:pt.x,lat:pt.y,px:px,py:py}; drawSectionOverlay(); showSectionProfile(); drawSectionOnMap(); readout3dHint('Sezione <b>A</b>&ndash;<b>B</b> tracciata &middot; tocca di nuovo per rifarla'); }   // B -> overlay 2D + profilo (nessun ridisegno del 3D)
+    if(!section3d.a || (section3d.a && section3d.b)){ section3d={a:{lon:pt.x,lat:pt.y},b:null}; $('sectionPanel').style.display='none'; readout3dHint('Sezione: punto <b>A</b> segnato &middot; tocca il punto <b>B</b>'); drawSection3dOverlay(); }
+    else { section3d.b={lon:pt.x,lat:pt.y}; drawSection3dOverlay(); showSectionProfile(); drawSectionOnMap(); readout3dHint('Sezione <b>A</b>&ndash;<b>B</b> tracciata &middot; tocca di nuovo per rifarla'); }   // overlay 3D sovrapposto (segue la rotazione) + profilo 2D
   }
   // Overlay 2D (SVG) di A/B + linea di congiunzione, sopra il canvas 3D. Usa i pixel del click: nessuna traccia gl3d -> nessun freeze.
   function drawSectionOverlay(){
@@ -726,6 +727,32 @@ try {
     if(a) s+=dot(a,'A'); if(b) s+=dot(b,'B');
     sv.innerHTML=s; sv.style.display='block';
   }
+  // ---- Sezione in 3D: grafico gl3d TRASPARENTE sovrapposto (#zone3dov), SOLO A/B+linea (~120 vtx) ----
+  // Il fondale pesante (#zone) NON viene ridisegnato -> nessun freeze; scena identica (aspectratio+range+camera)
+  // -> A/B allineati sulla superficie; camera sincronizzata (plotly_relayouting) -> ruotano/zoomano col fondale.
+  function sectionTraces3dReal(){
+    if(!lastGrid || !section3d.a) return [];
+    const a=section3d.a, b=section3d.b, tr=[];
+    if(b){ const N=120,X=[],Y=[],Z=[]; for(let i=0;i<=N;i++){ const t=i/N,lon=a.lon+(b.lon-a.lon)*t,lat=a.lat+(b.lat-a.lat)*t; const d=gridDepth(lastGrid,lat,lon); X.push(lon);Y.push(lat);Z.push((d==null?0:d)+8); }
+      tr.push({type:'scatter3d',mode:'lines',x:X,y:Y,z:Z,line:{color:'#ff5be0',width:6},name:'sezione',hoverinfo:'skip'}); }
+    [a,b].forEach((p,i)=>{ if(!p)return; const d=gridDepth(lastGrid,p.lat,p.lon);
+      tr.push({type:'scatter3d',mode:'markers+text',x:[p.lon],y:[p.lat],z:[(d==null?0:d)+8],marker:{size:6,color:'#ff5be0',line:{color:'#fff',width:1}},text:[i?'B':'A'],textposition:'top center',textfont:{color:'#ff9bef',size:13},name:'sez'+(i?'B':'A'),hoverinfo:'skip'}); });
+    return tr;
+  }
+  function overlaySceneLayout(){
+    const r=cur3d&&cur3d.range, asp=cur3d?cur3d.layout.scene.aspectratio:{x:1,y:1,z:1};
+    return {paper_bgcolor:'rgba(0,0,0,0)',margin:{l:0,r:0,t:0,b:0},showlegend:false,
+      scene:{aspectmode:'manual',aspectratio:asp,camera:(liveCamera()||(cur3d&&cur3d.layout.scene.camera)),bgcolor:'rgba(0,0,0,0)',
+        xaxis:{visible:false,showspikes:false,range:r&&r.x}, yaxis:{visible:false,showspikes:false,range:r&&r.y}, zaxis:{visible:false,showspikes:false,range:r&&r.z}}};
+  }
+  function drawSection3dOverlay(){
+    const el=$('zone3dov'), tr=sectionTraces3dReal();
+    if(!cur3d || $('zone').style.display==='none' || !tr.length){ el.style.display='none'; return; }
+    el.style.display='block';
+    Plotly.react(el, tr, overlaySceneLayout(), {displayModeBar:false,staticPlot:true,responsive:true});
+  }
+  function syncOverlayCam(){ const el=$('zone3dov'); if(el.style.display==='none'||!cur3d) return; const cam=liveCamera();
+    if(cam) Plotly.relayout(el, {'scene.camera':cam, 'scene.aspectratio':cur3d.layout.scene.aspectratio}); }
   // Isobata target: evidenzia con marker verde-lime le celle del fondale nella fascia di profondita' [from,to] m (sub-campionate uniformi).
   function isobandTraces(){
     if(!$('isobandOn').checked || !lastGrid) return [];
@@ -966,10 +993,13 @@ try {
     cur3d={ base:base, surfIdx:surfIdx, layout:layout, bb:g.bb, maxD:maxD, zRangeM:zRangeM, mD:mD, zmin:zmin, zmax:zmax,
             eye0:{x:veEye.x,y:veEye.y,z:veEye.z}, d0:Math.hypot(veEye.x,veEye.y,veEye.z) };   // camera default + distanza iniziale (per clamp zoom e reset)
     await Plotly.newPlot('zone',[...cur3d.base,...seaLevelTrace(),...boat3dTraces(),...section3dTraces(),...isobandTraces(),...upwellTraces(),...buildPlanes()],layout,{displayModeBar:false,responsive:true,doubleClick:false});
+    try{ const _s=$('zone')._fullLayout.scene; cur3d.range={x:_s.xaxis.range.slice(),y:_s.yaxis.range.slice(),z:_s.zaxis.range.slice()}; }catch(_){ cur3d.range=null; }   // range assi reali (per allineare l'overlay 3D sezione)
+    drawSection3dOverlay();   // riallinea A/B alla scena appena (ri)costruita
     // Task 2/4 + sezione: aggancia readout + tap (newPlot azzera i listener -> ri-bind ad ogni ridisegno)
     const zoneEl=$('zone');
     zoneEl.on('plotly_hover', updateZoneReadout);
     zoneEl.on('plotly_click', ev=>{ updateZoneReadout(ev); if($('sectionOn').checked) handleSectionClick(ev); else placeBoatFromEvent(ev); });
+    zoneEl.on('plotly_relayouting', syncOverlayCam); zoneEl.on('plotly_relayout', syncOverlayCam);   // overlay 3D sezione segue rotazione/zoom del fondale
     $('zoneReadout').innerHTML='Muovi il puntatore sul fondale per leggere la profondità';
     $('zoneReadout').style.display='block';
     $('loading').style.display='none';
@@ -977,7 +1007,7 @@ try {
     if($('statsOn').checked) toggleStats();   // ricalcola le statistiche sulla nuova area
   }
   $('btnBack3d').onclick=()=>{ $('zone').style.display='none'; $('btnBack3d').style.display='none';
-    $('zoneZoom').style.display='none'; $('planesCtl').style.display='none'; $('zoneReadout').style.display='none'; $('sectionPanel').style.display='none'; $('statsPanel').style.display='none'; $('btnSnap').style.display='none'; $('btnPan').style.display='none'; $('zReset').style.display='none'; $('btnDetail').style.display='none'; $('nav3d').style.display='none'; $('tools').style.display='flex'; $('title').style.display='block'; window.MLP.zoneOpen=false; };
+    $('zoneZoom').style.display='none'; $('planesCtl').style.display='none'; $('zoneReadout').style.display='none'; $('sectionPanel').style.display='none'; $('statsPanel').style.display='none'; $('btnSnap').style.display='none'; $('btnPan').style.display='none'; $('zReset').style.display='none'; $('btnDetail').style.display='none'; $('nav3d').style.display='none'; $('sectionOverlay').style.display='none'; $('zone3dov').style.display='none'; $('tools').style.display='flex'; $('title').style.display='block'; window.MLP.zoneOpen=false; };
   // Header comprimibile del pannello controlli 3D (utile su mobile: libera spazio)
   $('ctlToggle').onclick=()=>{ const b=$('planesBody'), open=b.style.display!=='none';
     b.style.display=open?'none':'flex'; $('ctlToggle').innerHTML=open?'&#9656;':'&#9662;'; };
@@ -998,9 +1028,9 @@ try {
   $('fractalOn').onchange=()=>{ if(lastGrid){ if($('fractalOn').checked) readout3dHint('Rilievo stimato: texture NON reale (solo estetica)');
     $('loadtxt').textContent='Ridisegno il fondale…'; $('loading').style.display='flex'; setTimeout(()=>show3D(lastGrid),30); } };
   // Sezione batimetrica: on -> attende 2 tap (A,B) sul fondale; off -> pulisce e chiude il grafico.
-  $('sectionOn').onchange=()=>{ section3d={a:null,b:null}; $('sectionPanel').style.display='none'; drawSectionOverlay(); drawSectionOnMap();
+  $('sectionOn').onchange=()=>{ section3d={a:null,b:null}; $('sectionPanel').style.display='none'; drawSection3dOverlay(); drawSectionOnMap();
     if($('sectionOn').checked) readout3dHint('Sezione: tocca il punto <b>A</b> poi il punto <b>B</b> sul fondale'); };
-  $('sectionClose').onclick=()=>{ $('sectionPanel').style.display='none'; section3d={a:null,b:null}; if($('sectionOn')) $('sectionOn').checked=false; drawSectionOverlay(); drawSectionOnMap(); };
+  $('sectionClose').onclick=()=>{ $('sectionPanel').style.display='none'; section3d={a:null,b:null}; if($('sectionOn')) $('sectionOn').checked=false; drawSection3dOverlay(); drawSectionOnMap(); };
   // Isobata target: evidenzia la fascia di profondita' scelta (riga fascia visibile solo se attiva).
   $('isobandOn').onchange=()=>{ $('rowIso').style.display=$('isobandOn').checked?'flex':'none'; render3DScene(); };
   $('isobandFrom').oninput=()=>{ if($('isobandOn').checked) render3DScene(); };
@@ -1144,7 +1174,7 @@ try {
   window.MLP.setBoat3d=(lon,lat)=>{ boat3d=(lon==null?null:{lon,lat}); render3DScene(); };   // hook per test barca (Task 4)
   window.MLP.getBoat3d=()=>boat3d;
   window.MLP.removeCurtains=removeCurtains;   // hook per test de-curtain bordi
-  window.MLP.setSection=(aLon,aLat,bLon,bLat)=>{ section3d={a:{lon:aLon,lat:aLat},b:{lon:bLon,lat:bLat}}; showSectionProfile(); drawSectionOnMap(); };   // hook test sezione (overlay 2D)
+  window.MLP.setSection=(aLon,aLat,bLon,bLat)=>{ section3d={a:{lon:aLon,lat:aLat},b:{lon:bLon,lat:bLat}}; showSectionProfile(); drawSectionOnMap(); drawSection3dOverlay(); };   // hook test sezione (overlay 3D)
 
   window.MLP.setMode=setMode; window.MLP.getRuler=()=>rulerPts; window.MLP.getRoute=()=>routePts; window.MLP.gpsOn=()=>watchId!=null;
 

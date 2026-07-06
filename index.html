@@ -53,6 +53,7 @@
   #zoneZoom button{width:40px;height:36px;border-radius:8px;border:1px solid #1f3650;background:#11243c;color:#fff;font-size:19px;font-weight:700;cursor:pointer}
   #btnSnap{position:fixed;right:8px;bottom:148px;display:none;z-index:1200;width:40px;height:34px;border-radius:8px;border:1px solid #1f3650;background:rgba(10,22,38,.94);color:#16e0ff;font-size:11px;font-weight:700;cursor:pointer}
   #btnPan{position:fixed;right:8px;bottom:188px;display:none;z-index:1200;width:52px;height:34px;border-radius:8px;border:1px solid #1f3650;background:rgba(10,22,38,.94);color:#dfeaf5;font-size:11px;font-weight:700;cursor:pointer}
+  #zReset{position:fixed;right:8px;bottom:228px;display:none;z-index:1200;width:52px;height:34px;border-radius:8px;border:1px solid #1f3650;background:rgba(10,22,38,.94);color:#16e0ff;font-size:11px;font-weight:700;cursor:pointer}
   #btnPan.active{background:#1e3a63;border-color:#16e0ff;color:#fff}
   #nav3d{position:fixed;left:8px;top:50%;transform:translateY(-50%);display:none;z-index:1200;grid-template-columns:repeat(3,34px);grid-template-rows:repeat(3,34px);gap:3px}
   #nav3d button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;border:1px solid #1f3650;background:rgba(10,22,38,.9);color:#16e0ff;border-radius:7px;cursor:pointer;padding:0;line-height:1}
@@ -133,6 +134,7 @@
 </div>
 <div id="statsPanel"></div>
 <div id="zoneZoom"><button id="zZoomIn">+</button><button id="zZoomOut">&minus;</button></div>
+<button id="zReset" title="Reset vista (posizione di default)">&#8635; Vista</button>
 <button id="btnPan" title="Sposta la vista (pan) invece di ruotare">Sposta</button>
 <button id="btnSnap" title="Salva immagine PNG della scena 3D">PNG</button>
 <div id="nav3d">
@@ -818,7 +820,7 @@ try {
           extra.push({type:'scatter3d',x:cs.X,y:cs.Y,z:cz,mode:'lines',line:{color:'#20140a',width:3},name:'linea di costa',hoverinfo:'skip'}); }
       }catch(e){}
     }
-    $('zone').style.display='block'; $('btnBack3d').style.display='block'; $('btnSnap').style.display='block'; $('btnPan').style.display='block'; $('nav3d').style.display='grid';
+    $('zone').style.display='block'; $('btnBack3d').style.display='block'; $('btnSnap').style.display='block'; $('btnPan').style.display='block'; $('zReset').style.display='block'; $('nav3d').style.display='grid';
     $('zoneZoom').style.display='flex'; $('planesCtl').style.display='flex'; $('tools').style.display='none'; $('title').style.display='none';
     // aspect X:Y proporzionale alle DISTANZE REALI al suolo (no distorsione, corrisponde alla carta)
     const xDist=Math.max(1000,(g.bb.lonE-g.bb.lonW)*111320*Math.cos((g.bb.latS+g.bb.latN)/2*Math.PI/180));
@@ -861,7 +863,8 @@ try {
     const base = useTopo ? [topoSurf, ...extra, card, edges]
                          : [seaSurf, landSurf, ...extra, card, edges];
     const surfIdx = useTopo ? [0] : [0,1];
-    cur3d={ base:base, surfIdx:surfIdx, layout:layout, bb:g.bb, maxD:maxD, zRangeM:zRangeM, mD:mD, zmin:zmin, zmax:zmax };
+    cur3d={ base:base, surfIdx:surfIdx, layout:layout, bb:g.bb, maxD:maxD, zRangeM:zRangeM, mD:mD, zmin:zmin, zmax:zmax,
+            eye0:{x:veEye.x,y:veEye.y,z:veEye.z}, d0:Math.hypot(veEye.x,veEye.y,veEye.z) };   // camera default + distanza iniziale (per clamp zoom e reset)
     await Plotly.newPlot('zone',[...cur3d.base,...seaLevelTrace(),...boat3dTraces(),...section3dTraces(),...isobandTraces(),...upwellTraces(),...buildPlanes()],layout,{displayModeBar:false,responsive:true,doubleClick:false});
     // Task 2/4 + sezione: aggancia readout + tap (newPlot azzera i listener -> ri-bind ad ogni ridisegno)
     const zoneEl=$('zone');
@@ -874,7 +877,7 @@ try {
     if($('statsOn').checked) toggleStats();   // ricalcola le statistiche sulla nuova area
   }
   $('btnBack3d').onclick=()=>{ $('zone').style.display='none'; $('btnBack3d').style.display='none';
-    $('zoneZoom').style.display='none'; $('planesCtl').style.display='none'; $('zoneReadout').style.display='none'; $('sectionPanel').style.display='none'; $('statsPanel').style.display='none'; $('btnSnap').style.display='none'; $('btnPan').style.display='none'; $('nav3d').style.display='none'; $('tools').style.display='flex'; $('title').style.display='block'; window.MLP.zoneOpen=false; };
+    $('zoneZoom').style.display='none'; $('planesCtl').style.display='none'; $('zoneReadout').style.display='none'; $('sectionPanel').style.display='none'; $('statsPanel').style.display='none'; $('btnSnap').style.display='none'; $('btnPan').style.display='none'; $('zReset').style.display='none'; $('nav3d').style.display='none'; $('tools').style.display='flex'; $('title').style.display='block'; window.MLP.zoneOpen=false; };
   // Header comprimibile del pannello controlli 3D (utile su mobile: libera spazio)
   $('ctlToggle').onclick=()=>{ const b=$('planesBody'), open=b.style.display!=='none';
     b.style.display=open?'none':'flex'; $('ctlToggle').innerHTML=open?'&#9656;':'&#9662;'; };
@@ -905,6 +908,10 @@ try {
     if(boatGpsMode){ if(watchId==null) startGps(); readout3dHint('Barca GPS live: la scena seguira&rsquo; la tua posizione reale'); } };
   // Export PNG della scena 3D corrente
   $('btnSnap').onclick=()=>{ if(window.Plotly && $('zone')) Plotly.downloadImage('zone',{format:'png',filename:'marenav3d_fondale',width:1600,height:1100}); };
+  // Reset vista: ripristina la camera di default (utile anche per uscire dal "nero" da troppo zoom).
+  $('zReset').onclick=()=>{ if(!cur3d) return; const e0=cur3d.eye0||{x:1.5,y:-1.75,z:0.9};
+    Plotly.relayout('zone',{'scene.camera.eye':{x:e0.x,y:e0.y,z:e0.z},'scene.camera.center':{x:0,y:0,z:0},'scene.camera.up':{x:0,y:0,z:1}});
+    readout3dHint('Vista ripristinata'); };
   // Sposta/Ruota: commuta l'interazione della scena 3D (pan sposta e ricentra la vista; turntable ruota attorno al centro).
   $('btnPan').onclick=()=>{ dragPan=!dragPan; const dm=dragPan?'pan':'turntable';
     $('btnPan').textContent=dragPan?'Ruota':'Sposta'; $('btnPan').classList.toggle('active',dragPan);
@@ -969,13 +976,12 @@ try {
   $('xraySlider').oninput=applyXray;
   // Converte un punto DATI (lon,lat,z) nelle coordinate normalizzate della scena Plotly (asse mappato a [-asp/2,+asp/2] centrato).
   function dataToScene(px,py,pz){
-    const sc=$('zone')._fullLayout&&$('zone')._fullLayout.scene; if(!sc||!cur3d) return {x:0,y:0,z:0};
-    const a=sc.aspectratio||cur3d.layout.scene.aspectratio;
-    const xr=(sc.xaxis&&sc.xaxis.range)||[cur3d.bb.lonW,cur3d.bb.lonE];
-    const yr=(sc.yaxis&&sc.yaxis.range)||[cur3d.bb.latS,cur3d.bb.latN];
-    const zr=(sc.zaxis&&sc.zaxis.range)||[cur3d.zmin,cur3d.zmax];
-    const cv=(v,r,asp)=>{ const mid=(r[0]+r[1])/2, rng=(r[1]-r[0])||1; return (v-mid)/rng*(asp||2); };
-    return {x:cv(px,xr,a.x), y:cv(py,yr,a.y), z:cv(pz,zr,a.z)};
+    if(!cur3d) return {x:0,y:0,z:0};
+    // Uso i range DATI stabili (bb + zmin/zmax): i range di _fullLayout.scene.[xyz]axis si corrompono ([-1,4])
+    // per gli assi invisibili dopo qualche relayout della camera -> darebbero un P sballato e la camera deriverebbe.
+    const a=cur3d.layout.scene.aspectratio;
+    const cv=(v,r0,r1,asp)=>{ const mid=(r0+r1)/2, rng=(r1-r0)||1; return (v-mid)/rng*(asp||2); };
+    return {x:cv(px,cur3d.bb.lonW,cur3d.bb.lonE,a.x), y:cv(py,cur3d.bb.latS,cur3d.bb.latN,a.y), z:cv(pz,cur3d.zmin,cur3d.zmax,a.z)};
   }
   // Zoom VERSO IL CURSORE: scala eye+center attorno al punto sotto il puntatore (lastHoverPt) -> quel punto resta fermo.
   // Se non c'e' un punto sotto il cursore, ripiega sul centro (comportamento precedente).
@@ -983,10 +989,17 @@ try {
     const cam=(sc._scene&&sc._scene.getCamera)?sc._scene.getCamera():sc.camera;
     const c=cam.center||{x:0,y:0,z:0}, e=cam.eye, u=cam.up||{x:0,y:0,z:1};
     const P = lastHoverPt ? dataToScene(lastHoverPt.x,lastHoverPt.y,lastHoverPt.z) : c;
+    // LIMITE zoom: la distanza occhio-centro non deve scendere sotto ~18% dell'iniziale (altrimenti la camera entra
+    // nella superficie -> schermo nero) ne' superare ~6x (persa nel vuoto). Clampo il fattore f di conseguenza.
+    const d0=(cur3d&&cur3d.d0)||2.2, dEC=Math.hypot(e.x-c.x,e.y-c.y,e.z-c.z)||1e-6;
+    // Clamp SENZA estrapolare (ff>1 in zoom-in farebbe derivare la camera lontano dal punto):
+    // zoom-in (f<1) fermato al 18% di d0 con ff<=1; zoom-out (f>1) fermato a 6x d0 con ff>=1.
+    let ff = (f<1) ? Math.min(1, Math.max(f, 0.18*d0/dEC)) : Math.max(1, Math.min(f, 6*d0/dEC));
+    if(!(ff>0)) return;
     Plotly.relayout('zone',{
       'scene.camera.up':{x:u.x,y:u.y,z:u.z},
-      'scene.camera.center':{x:P.x+(c.x-P.x)*f, y:P.y+(c.y-P.y)*f, z:P.z+(c.z-P.z)*f},
-      'scene.camera.eye':{x:P.x+(e.x-P.x)*f, y:P.y+(e.y-P.y)*f, z:P.z+(e.z-P.z)*f}
+      'scene.camera.center':{x:P.x+(c.x-P.x)*ff, y:P.y+(c.y-P.y)*ff, z:P.z+(c.z-P.z)*ff},
+      'scene.camera.eye':{x:P.x+(e.x-P.x)*ff, y:P.y+(e.y-P.y)*ff, z:P.z+(e.z-P.z)*ff}
     }); }
   $('zZoomIn').onclick=()=>zoneZoom(0.8); $('zZoomOut').onclick=()=>zoneZoom(1.25);
   // Rotella del mouse: zoom verso il cursore (intercettiamo per evitare lo zoom-al-centro nativo di Plotly).

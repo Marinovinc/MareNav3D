@@ -684,7 +684,7 @@ try {
     const pt=ev&&ev.points&&ev.points.find(p=>p.data&&p.data.type==='surface'); if(!pt||pt.x==null||pt.y==null) return;
     if(!section3d.a || (section3d.a && section3d.b)){ section3d={a:{lon:pt.x,lat:pt.y},b:null}; $('sectionPanel').style.display='none'; readout3dHint('Sezione: punto <b>A</b> impostato &middot; tocca il punto <b>B</b>'); }
     else { section3d.b={lon:pt.x,lat:pt.y}; showSectionProfile(); }
-    render3DScene();
+    // niente ridisegno 3D: la sezione e' nel grafico 2D (evita lo stallo GPU)
   }
   // Isobata target: evidenzia con marker verde-lime le celle del fondale nella fascia di profondita' [from,to] m (sub-campionate uniformi).
   function isobandTraces(){
@@ -703,6 +703,8 @@ try {
   }
   function render3DScene(){ if(!cur3d) return; const lc=liveCamera(); if(lc) cur3d.layout.scene.camera=lc;   // preserva la vista corrente
     Plotly.react('zone',[...cur3d.base,...seaLevelTrace(),...boat3dTraces(),...section3dTraces(),...isobandTraces(),...upwellTraces(),...buildPlanes()],cur3d.layout,{displayModeBar:false,responsive:true,doubleClick:false}); }
+  // La Sezione vive nel grafico 2D (showSectionProfile), NON nel modello 3D: qualsiasi modifica alla scena
+  // gl3d ri-renderizza l'intera superficie densa (centinaia di migliaia di vertici) e blocca le GPU deboli.
   // Ombreggiatura rilievo (hillshade): luce radente regolabile per azimut del sole -> scarpate/canyon in risalto.
   function sunLightPos(az){ const r=(az||0)*Math.PI/180, R=300; return {x:Math.cos(r)*R, y:Math.sin(r)*R, z:500}; }
   function shadeParams(){ const on=$('shadeOn').checked;
@@ -956,9 +958,8 @@ try {
     $('loadtxt').textContent='Ridisegno il fondale…'; $('loading').style.display='flex'; setTimeout(()=>show3D(lastGrid),30); } };
   // Sezione batimetrica: on -> attende 2 tap (A,B) sul fondale; off -> pulisce e chiude il grafico.
   $('sectionOn').onchange=()=>{ section3d={a:null,b:null}; $('sectionPanel').style.display='none';
-    if($('sectionOn').checked) readout3dHint('Sezione batimetrica: tocca due punti sul fondale (<b>A</b> poi <b>B</b>)');
-    render3DScene(); };
-  $('sectionClose').onclick=()=>{ $('sectionPanel').style.display='none'; section3d={a:null,b:null}; if($('sectionOn')) $('sectionOn').checked=false; render3DScene(); };
+    if($('sectionOn').checked) readout3dHint('Sezione batimetrica: tocca due punti sul fondale (<b>A</b> poi <b>B</b>)'); };
+  $('sectionClose').onclick=()=>{ $('sectionPanel').style.display='none'; section3d={a:null,b:null}; if($('sectionOn')) $('sectionOn').checked=false; };
   // Isobata target: evidenzia la fascia di profondita' scelta (riga fascia visibile solo se attiva).
   $('isobandOn').onchange=()=>{ $('rowIso').style.display=$('isobandOn').checked?'flex':'none'; render3DScene(); };
   $('isobandFrom').oninput=()=>{ if($('isobandOn').checked) render3DScene(); };
@@ -1039,9 +1040,9 @@ try {
   // camera che indietreggia quando il rilievo cresce, così il blocco resta inquadrato (niente "muro")
   function camForAspZ(aspZ){ const k=Math.max(1,aspZ/0.55); return {x:1.25*k,y:-1.75*k,z:0.55*k}; }
   function applyVE(){ const VE=currentVE(); $('veVal').textContent=VE.toFixed(1)+'×';
-    if(!cur3d) return; const aspZ=computeAspZ(VE,cur3d.zRangeM,cur3d.mD), eye=camForAspZ(aspZ);
-    cur3d.layout.scene.aspectratio.z=aspZ; cur3d.layout.scene.camera.eye=eye;
-    Plotly.relayout('zone',{'scene.aspectratio.z':aspZ,'scene.camera.eye':eye}); }
+    if(!cur3d) return; const aspZ=computeAspZ(VE,cur3d.zRangeM,cur3d.mD);
+    cur3d.layout.scene.aspectratio.z=aspZ;
+    Plotly.relayout('zone',{'scene.aspectratio.z':aspZ}); }   // cambia solo la scala Z, MANTIENE la camera corrente (niente reset posizione)
   $('veSlider').oninput=applyVE;
   // Switch "Vedi attraverso": rende il fondale (e la terra) semi-trasparente per guardare oltre le pareti da qualsiasi angolo
   // Trasparenza fondale regolabile (0% = solido, 100% = quasi vetro): per vedere il rilievo oltre le pareti laterali da ogni angolo
@@ -1102,7 +1103,7 @@ try {
   window.MLP.setBoat3d=(lon,lat)=>{ boat3d=(lon==null?null:{lon,lat}); render3DScene(); };   // hook per test barca (Task 4)
   window.MLP.getBoat3d=()=>boat3d;
   window.MLP.removeCurtains=removeCurtains;   // hook per test de-curtain bordi
-  window.MLP.setSection=(aLon,aLat,bLon,bLat)=>{ section3d={a:{lon:aLon,lat:aLat},b:{lon:bLon,lat:bLat}}; showSectionProfile(); render3DScene(); };   // hook test sezione
+  window.MLP.setSection=(aLon,aLat,bLon,bLat)=>{ section3d={a:{lon:aLon,lat:aLat},b:{lon:bLon,lat:bLat}}; showSectionProfile(); };   // hook test sezione
 
   window.MLP.setMode=setMode; window.MLP.getRuler=()=>rulerPts; window.MLP.getRoute=()=>routePts; window.MLP.gpsOn=()=>watchId!=null;
 

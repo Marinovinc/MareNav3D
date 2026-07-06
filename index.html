@@ -536,6 +536,17 @@ try {
     const j=Math.round((lon-g.bb.lonW)/((g.bb.lonE-g.bb.lonW)/(g.cols-1)));
     if(i<0||i>=g.rows||j<0||j>=g.cols) return null; return g.zz[i][j];
   }
+  // Sotto-campiona la griglia SOLO per il display 3D (modalita' Sezione leggera): mesh rada -> re-render economico.
+  // I dati del profilo restano a piena risoluzione (lastGrid), quindi la Sezione non perde precisione.
+  function makeLightGrid(g, cap){
+    const rs=Math.max(1,Math.ceil(g.rows/cap)), cs=Math.max(1,Math.ceil(g.cols/cap));
+    if(rs===1 && cs===1) return g;
+    const lats=[], lons=[], zz=[];
+    for(let i=0;i<g.rows;i+=rs) lats.push(g.lats[i]);
+    for(let j=0;j<g.cols;j+=cs) lons.push(g.lons[j]);
+    for(let i=0;i<g.rows;i+=rs){ const row=[]; for(let j=0;j<g.cols;j+=cs) row.push(g.zz[i][j]); zz.push(row); }
+    return {lats,lons,zz,rows:lats.length,cols:lons.length,bb:g.bb};
+  }
   // Campionamento BILINEARE (smussatura #4): interpola tra i 4 vicini invece del nearest -> niente "gradini".
   // Vicino a buchi/costa (qualche vicino null) ripiega su nearest per non introdurre NaN.
   function gridDepthBilinear(g, lat, lon){
@@ -580,7 +591,7 @@ try {
     }
     return {X,Y};
   }
-  let cur3d=null, seabedStyle='classic', lastGrid=null, boat3d=null, section3d={a:null,b:null};   // seabedStyle: 'classic' (2 superfici) | 'rotta' (superficie unica topografica); boat3d={lon,lat} = sonda; section3d = estremi A/B della sezione batimetrica
+  let cur3d=null, seabedStyle='classic', lastGrid=null, boat3d=null, section3d={a:null,b:null}, sectionMode=false;   // sectionMode: superficie 3D rada quando la Sezione e' attiva (evita freeze GPU); dati profilo restano full-res in lastGrid
   let boatGpsMode=false, gps3dLast=0;   // barca GPS live in 3D: da onPos aggiorna boat3d (throttle 1.5s)
   let dragPan=false;   // interazione scena 3D: false=ruota (turntable), true=sposta (pan)
   let lastHoverPt=null;   // ultimo punto del fondale sotto il cursore (dati lon/lat/z) -> zoom verso il cursore
@@ -697,7 +708,7 @@ try {
     const pt=ev&&ev.points&&ev.points.find(p=>p.data&&p.data.type==='surface'); if(!pt||pt.x==null||pt.y==null) return;
     if(!section3d.a || (section3d.a && section3d.b)){ section3d={a:{lon:pt.x,lat:pt.y},b:null}; $('sectionPanel').style.display='none'; readout3dHint('Sezione: punto <b>A</b> impostato &middot; tocca il punto <b>B</b>'); }
     else { section3d.b={lon:pt.x,lat:pt.y}; showSectionProfile(); }
-    drawSectionOnMap();   // linea/punti A-B sulla cartina 2D (no 3D -> no freeze)
+    drawSectionOnMap(); render3DScene();   // A/B/linea sulla cartina 2D e sulla scena 3D (rada -> niente freeze)
   }
   // Isobata target: evidenzia con marker verde-lime le celle del fondale nella fascia di profondita' [from,to] m (sub-campionate uniformi).
   function isobandTraces(){
@@ -831,22 +842,23 @@ try {
     removeCurtains(g); window.MLP.decurtain=g._decurtain; window.MLP.decurtainEdge=g._decurtainEdge;   // togli le tende verticali artefatte (bordi inclusi) prima di costruire le superfici
     lastGrid=g; window.MLP.lastBBox=g.bb;   // memorizza griglia + bbox (per riprodurre l'area esatta in caso di artefatti: leggere MLP.lastBBox in console)
     const useTopo=(seabedStyle==='rotta');
-    const depthPos=g.zz.map(r=>r.map(v=>v==null?null:Math.max(0,Math.round(-v))));
+    const gd = sectionMode ? makeLightGrid(g,140) : g;   // Sezione attiva -> superficie rada per il display
+    const depthPos=gd.zz.map(r=>r.map(v=>v==null?null:Math.max(0,Math.round(-v))));
     let maxD=0; depthPos.forEach(r=>r.forEach(v=>{ if(v!=null&&v>maxD)maxD=v; })); if(maxD<=0)maxD=100;
     // DUE superfici: MARE in gradazioni di BLU (chiaro basso fondale -> blu scuro profondo) a contrasto pieno,
     // TERRA beige->marrone in rilievo (toni CampoGara3D). Ciascuna con la propria scala -> il mare non viene compresso.
-    const zSea=fractalGrid(g.zz.map(r=>r.map(v=>(v!=null&&v<=0)?v:null)));   // "rilievo stimato" frattale (se attivo)
-    const zLand=g.zz.map(r=>r.map(v=>(v!=null&&v>0)?v:null));
-    let zmin=0,zmax=0; g.zz.forEach(r=>r.forEach(v=>{ if(v!=null){ if(v<zmin)zmin=v; if(v>zmax)zmax=v; } })); if(zmin>=0)zmin=-1; if(zmax<=0)zmax=1;
+    const zSea=fractalGrid(gd.zz.map(r=>r.map(v=>(v!=null&&v<=0)?v:null)));   // "rilievo stimato" frattale (se attivo)
+    const zLand=gd.zz.map(r=>r.map(v=>(v!=null&&v>0)?v:null));
+    let zmin=0,zmax=0; gd.zz.forEach(r=>r.forEach(v=>{ if(v!=null){ if(v<zmin)zmin=v; if(v>zmax)zmax=v; } })); if(zmin>=0)zmin=-1; if(zmax<=0)zmax=1;
     let landMax=0; zLand.forEach(r=>r.forEach(v=>{ if(v!=null&&v>landMax)landMax=v; })); if(landMax<=0)landMax=1;
     const cdSea=zSea.map(r=>r.map(v=>v==null?'':(Math.abs(Math.round(v))+' m fondale')));
     const cdLand=zLand.map(r=>r.map(v=>v==null?'':(Math.round(v)+' m s.l.m.')));
-    const seaSurf={type:'surface',x:g.lons,y:g.lats,z:zSea,surfacecolor:depthPos,cmin:0,cmax:maxD,
+    const seaSurf={type:'surface',x:gd.lons,y:gd.lats,z:zSea,surfacecolor:depthPos,cmin:0,cmax:maxD,
       colorscale:[[0,'#dbeaf7'],[0.15,'#9ecae1'],[0.32,'#6baed6'],[0.5,'#4292c6'],[0.72,'#2171b5'],[1,'#08306b']],
       colorbar:{title:{text:'prof. m'},x:1,thickness:9},
       hovertemplate:'Quota <b>%{z:.0f} m</b>  (negativo = fondale)<br>Lat %{y:.4f}°  ·  Lon %{x:.4f}°<extra></extra>',
       lighting:{ambient:0.45,diffuse:0.95,specular:0.12,roughness:0.55}, lightposition:{x:-150,y:-220,z:900}};
-    const landSurf={type:'surface',x:g.lons,y:g.lats,z:zLand,surfacecolor:zLand,cmin:0,cmax:landMax,showscale:false,
+    const landSurf={type:'surface',x:gd.lons,y:gd.lats,z:zLand,surfacecolor:zLand,cmin:0,cmax:landMax,showscale:false,
       colorscale:[[0,'rgb(237,234,194)'],[0.3,'rgb(214,189,141)'],[0.6,'rgb(189,146,90)'],[1,'rgb(161,105,40)']],
       hovertemplate:'Quota <b>%{z:.0f} m</b> s.l.m.<br>Lat %{y:.4f}°  ·  Lon %{x:.4f}°<extra></extra>',
       lighting:{ambient:0.55,diffuse:0.9,specular:0.08,roughness:0.85}, lightposition:{x:-150,y:-220,z:900}};
@@ -971,8 +983,10 @@ try {
     $('loadtxt').textContent='Ridisegno il fondale…'; $('loading').style.display='flex'; setTimeout(()=>show3D(lastGrid),30); } };
   // Sezione batimetrica: on -> attende 2 tap (A,B) sul fondale; off -> pulisce e chiude il grafico.
   $('sectionOn').onchange=()=>{ section3d={a:null,b:null}; $('sectionPanel').style.display='none'; drawSectionOnMap();
-    if($('sectionOn').checked) readout3dHint('Sezione batimetrica: tocca due punti sul fondale (<b>A</b> poi <b>B</b>)'); };
-  $('sectionClose').onclick=()=>{ $('sectionPanel').style.display='none'; section3d={a:null,b:null}; if($('sectionOn')) $('sectionOn').checked=false; drawSectionOnMap(); };
+    sectionMode=$('sectionOn').checked;
+    if(sectionMode) readout3dHint('Sezione batimetrica: tocca due punti sul fondale (<b>A</b> poi <b>B</b>)');
+    if(lastGrid) show3D(lastGrid); };   // entra/esce dalla mesh rada (dettaglio pieno quando la Sezione e' spenta)
+  $('sectionClose').onclick=()=>{ $('sectionPanel').style.display='none'; section3d={a:null,b:null}; if($('sectionOn')) $('sectionOn').checked=false; drawSectionOnMap(); sectionMode=false; if(lastGrid) show3D(lastGrid); };
   // Isobata target: evidenzia la fascia di profondita' scelta (riga fascia visibile solo se attiva).
   $('isobandOn').onchange=()=>{ $('rowIso').style.display=$('isobandOn').checked?'flex':'none'; render3DScene(); };
   $('isobandFrom').oninput=()=>{ if($('isobandOn').checked) render3DScene(); };
@@ -1116,7 +1130,7 @@ try {
   window.MLP.setBoat3d=(lon,lat)=>{ boat3d=(lon==null?null:{lon,lat}); render3DScene(); };   // hook per test barca (Task 4)
   window.MLP.getBoat3d=()=>boat3d;
   window.MLP.removeCurtains=removeCurtains;   // hook per test de-curtain bordi
-  window.MLP.setSection=(aLon,aLat,bLon,bLat)=>{ section3d={a:{lon:aLon,lat:aLat},b:{lon:bLon,lat:bLat}}; showSectionProfile(); drawSectionOnMap(); };   // hook test sezione
+  window.MLP.setSection=async (aLon,aLat,bLon,bLat)=>{ section3d={a:{lon:aLon,lat:aLat},b:{lon:bLon,lat:bLat}}; sectionMode=true; if(lastGrid) await show3D(lastGrid); showSectionProfile(); drawSectionOnMap(); render3DScene(); };   // hook test sezione
 
   window.MLP.setMode=setMode; window.MLP.getRuler=()=>rulerPts; window.MLP.getRoute=()=>routePts; window.MLP.gpsOn=()=>watchId!=null;
 

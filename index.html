@@ -842,7 +842,7 @@ try {
     removeCurtains(g); window.MLP.decurtain=g._decurtain; window.MLP.decurtainEdge=g._decurtainEdge;   // togli le tende verticali artefatte (bordi inclusi) prima di costruire le superfici
     lastGrid=g; window.MLP.lastBBox=g.bb;   // memorizza griglia + bbox (per riprodurre l'area esatta in caso di artefatti: leggere MLP.lastBBox in console)
     const useTopo=(seabedStyle==='rotta');
-    const gd = sectionMode ? makeLightGrid(g,140) : g;   // Sezione attiva -> superficie rada per il display
+    const gd = sectionMode ? makeLightGrid(g,200) : g;   // Sezione attiva -> superficie rada per il display
     const depthPos=gd.zz.map(r=>r.map(v=>v==null?null:Math.max(0,Math.round(-v))));
     let maxD=0; depthPos.forEach(r=>r.forEach(v=>{ if(v!=null&&v>maxD)maxD=v; })); if(maxD<=0)maxD=100;
     // DUE superfici: MARE in gradazioni di BLU (chiaro basso fondale -> blu scuro profondo) a contrasto pieno,

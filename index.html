@@ -127,6 +127,7 @@
   <button id="btn3d">Fondali 3D</button>
 </div>
 <div id="zone"></div>
+<svg id="sectionOverlay" style="position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;display:none;z-index:1150"></svg>
 <button id="btnBack3d">&#8592; Carta</button>
 <div id="zoneReadout"></div>
 <div id="sectionPanel">
@@ -664,6 +665,7 @@ try {
   }
   // Nuova feature: SEZIONE BATIMETRICA. Tocca due punti (A,B) sul fondale -> linea magenta drappeggiata sul fondo + profilo verticale 2D.
   function section3dTraces(){
+    return [];   // la sezione ora e' un overlay 2D HTML sopra il canvas (no gl3d -> nessun re-render/freeze)
     if(!lastGrid || !section3d.a) return [];
     const a=section3d.a, b=section3d.b, tr=[];
     if(b){ const N=120, X=[],Y=[],Z=[];
@@ -706,9 +708,21 @@ try {
   }
   function handleSectionClick(ev){
     const pt=ev&&ev.points&&ev.points.find(p=>p.data&&p.data.type==='surface'); if(!pt||pt.x==null||pt.y==null) return;
-    if(!section3d.a || (section3d.a && section3d.b)){ section3d={a:{lon:pt.x,lat:pt.y},b:null}; $('sectionPanel').style.display='none'; readout3dHint('Sezione: punto <b>A</b> impostato &middot; tocca il punto <b>B</b>'); }
-    else { section3d.b={lon:pt.x,lat:pt.y}; showSectionProfile(); }
-    drawSectionOnMap(); render3DScene();   // A/B/linea sulla cartina 2D e sulla scena 3D (rada -> niente freeze)
+    const zr=$('zone').getBoundingClientRect(), me=ev.event||{};
+    const px=(me.clientX!=null?me.clientX:0)-zr.left, py=(me.clientY!=null?me.clientY:0)-zr.top;   // pixel del click (solo overlay 2D)
+    if(!section3d.a || (section3d.a && section3d.b)){ section3d={a:{lon:pt.x,lat:pt.y,px:px,py:py},b:null}; $('sectionPanel').style.display='none'; readout3dHint('Sezione: punto <b>A</b> segnato &middot; tocca il punto <b>B</b>'); drawSectionOverlay(); }
+    else { section3d.b={lon:pt.x,lat:pt.y,px:px,py:py}; drawSectionOverlay(); showSectionProfile(); drawSectionOnMap(); readout3dHint('Sezione <b>A</b>&ndash;<b>B</b> tracciata &middot; tocca di nuovo per rifarla'); }   // B definito -> calcolo automatico del profilo (2D, nessun tocco al 3D)
+  }
+  // Overlay 2D (SVG) di A/B + linea di congiunzione, sopra il canvas 3D. Usa i pixel del click: nessuna traccia gl3d -> nessun freeze.
+  function drawSectionOverlay(){
+    const sv=$('sectionOverlay'), a=section3d.a, b=section3d.b;
+    if(!a && !b){ sv.style.display='none'; sv.innerHTML=''; return; }
+    const dot=(p,l)=>'<circle cx="'+p.px+'" cy="'+p.py+'" r="7" fill="#ff5be0" stroke="#fff" stroke-width="2"/>'+
+      '<text x="'+p.px+'" y="'+(p.py-12)+'" fill="#fff" font-size="15" font-weight="700" text-anchor="middle" stroke="#a0009a" stroke-width="0.8" paint-order="stroke">'+l+'</text>';
+    let s='';
+    if(a&&b) s+='<line x1="'+a.px+'" y1="'+a.py+'" x2="'+b.px+'" y2="'+b.py+'" stroke="#ff5be0" stroke-width="3" stroke-dasharray="6 4"/>';
+    if(a) s+=dot(a,'A'); if(b) s+=dot(b,'B');
+    sv.innerHTML=s; sv.style.display='block';
   }
   // Isobata target: evidenzia con marker verde-lime le celle del fondale nella fascia di profondita' [from,to] m (sub-campionate uniformi).
   function isobandTraces(){
@@ -982,11 +996,9 @@ try {
   $('fractalOn').onchange=()=>{ if(lastGrid){ if($('fractalOn').checked) readout3dHint('Rilievo stimato: texture NON reale (solo estetica)');
     $('loadtxt').textContent='Ridisegno il fondale…'; $('loading').style.display='flex'; setTimeout(()=>show3D(lastGrid),30); } };
   // Sezione batimetrica: on -> attende 2 tap (A,B) sul fondale; off -> pulisce e chiude il grafico.
-  $('sectionOn').onchange=()=>{ section3d={a:null,b:null}; $('sectionPanel').style.display='none'; drawSectionOnMap();
-    sectionMode=$('sectionOn').checked;
-    if(sectionMode) readout3dHint('Sezione batimetrica: tocca due punti sul fondale (<b>A</b> poi <b>B</b>)');
-    if(lastGrid) show3D(lastGrid); };   // entra/esce dalla mesh rada (dettaglio pieno quando la Sezione e' spenta)
-  $('sectionClose').onclick=()=>{ $('sectionPanel').style.display='none'; section3d={a:null,b:null}; if($('sectionOn')) $('sectionOn').checked=false; drawSectionOnMap(); sectionMode=false; if(lastGrid) show3D(lastGrid); };
+  $('sectionOn').onchange=()=>{ section3d={a:null,b:null}; $('sectionPanel').style.display='none'; drawSectionOverlay(); drawSectionOnMap();
+    if($('sectionOn').checked) readout3dHint('Sezione: tocca il punto <b>A</b> poi il punto <b>B</b> sul fondale'); };
+  $('sectionClose').onclick=()=>{ $('sectionPanel').style.display='none'; section3d={a:null,b:null}; if($('sectionOn')) $('sectionOn').checked=false; drawSectionOverlay(); drawSectionOnMap(); };
   // Isobata target: evidenzia la fascia di profondita' scelta (riga fascia visibile solo se attiva).
   $('isobandOn').onchange=()=>{ $('rowIso').style.display=$('isobandOn').checked?'flex':'none'; render3DScene(); };
   $('isobandFrom').oninput=()=>{ if($('isobandOn').checked) render3DScene(); };
@@ -1130,7 +1142,7 @@ try {
   window.MLP.setBoat3d=(lon,lat)=>{ boat3d=(lon==null?null:{lon,lat}); render3DScene(); };   // hook per test barca (Task 4)
   window.MLP.getBoat3d=()=>boat3d;
   window.MLP.removeCurtains=removeCurtains;   // hook per test de-curtain bordi
-  window.MLP.setSection=async (aLon,aLat,bLon,bLat)=>{ section3d={a:{lon:aLon,lat:aLat},b:{lon:bLon,lat:bLat}}; sectionMode=true; if(lastGrid) await show3D(lastGrid); showSectionProfile(); drawSectionOnMap(); render3DScene(); };   // hook test sezione
+  window.MLP.setSection=(aLon,aLat,bLon,bLat)=>{ section3d={a:{lon:aLon,lat:aLat},b:{lon:bLon,lat:bLat}}; showSectionProfile(); drawSectionOnMap(); };   // hook test sezione (profilo diretto 2D)
 
   window.MLP.setMode=setMode; window.MLP.getRuler=()=>rulerPts; window.MLP.getRoute=()=>routePts; window.MLP.gpsOn=()=>watchId!=null;
 

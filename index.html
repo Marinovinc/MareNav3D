@@ -167,10 +167,13 @@
         <label title="Attiva ombreggiatura (luce radente) e i controlli di luminosità, contrasto e direzione della luce sul rilievo"><input type="checkbox" id="shadeOn"> Ombreggiatura</label>
       </div>
       <div id="rowSun" style="display:none">
-        <div class="ctlRow ctlSub"><span title="Luce ambientale: più alta = fondale più chiaro e piatto">Luminosità</span><input type="range" id="lightLum" min="0.10" max="0.90" step="0.05" value="0.20"><b id="lightLumVal">0.20</b></div>
-        <div class="ctlRow ctlSub"><span title="Componente direzionale: più alto = maggiore stacco luci/ombre sui rilievi">Contrasto</span><input type="range" id="lightContr" min="0.2" max="1.5" step="0.05" value="1.00"><b id="lightContrVal">1.00</b></div>
-        <div class="ctlRow ctlSub"><span title="Direzione orizzontale della luce (azimut del sole)">Azimut luce</span><input type="range" id="sunAz" min="0" max="360" step="15" value="300"><b id="sunAzVal">300&deg;</b></div>
-        <div class="ctlRow ctlSub"><span title="Altezza della luce sull'orizzonte: bassa = radente (ombre lunghe, rilievo forte); alta = dall'alto (piatto)">Altezza luce</span><input type="range" id="sunAlt" min="5" max="85" step="5" value="35"><b id="sunAltVal">35&deg;</b></div>
+        <div class="ctlRow ctlSub"><span title="Chiarezza generale dell'ombreggiatura">Luminosità</span><input type="range" id="lightLum" min="0.10" max="0.90" step="0.05" value="0.25"><b id="lightLumVal">0.25</b></div>
+        <div class="ctlRow ctlSub"><span title="Quanto risalta il rilievo (ombre più marcate)">Contrasto</span><input type="range" id="lightContr" min="0.2" max="1.6" step="0.05" value="1.20"><b id="lightContrVal">1.20</b></div>
+        <label class="ctlSub" style="font-size:11px;display:block;margin:3px 0 1px" title="Rilievo ombreggiato in GRIGI con direzione della luce controllabile (perde i colori di profondità)"><input type="checkbox" id="grayShade"> Rilievo grigio (luce direzionale)</label>
+        <div id="rowGray" style="display:none">
+          <div class="ctlRow ctlSub"><span title="Direzione orizzontale della luce (azimut del sole)">Azimut luce</span><input type="range" id="sunAz" min="0" max="360" step="15" value="315"><b id="sunAzVal">315&deg;</b></div>
+          <div class="ctlRow ctlSub"><span title="Altezza della luce: bassa = radente (ombre lunghe, rilievo forte); alta = dall'alto (piatto)">Altezza luce</span><input type="range" id="sunAlt" min="5" max="85" step="5" value="35"><b id="sunAltVal">35&deg;</b></div>
+        </div>
       </div>
     </div>
     <div class="ctlGrp">
@@ -803,24 +806,31 @@ try {
   function grayRamp(lum){ const g=v=>{v=Math.max(0,Math.min(255,Math.round(v)));return 'rgb('+v+','+v+','+Math.min(255,Math.round(v*1.03))+')';};
     const lo=12+lum*40, hi=110+Math.min(0.9,lum)*150; return [[0,g(lo)],[0.5,g((lo+hi)/2)],[1,g(hi)]]; }
   // per show3D: luce piatta quando l'ombreggiatura e' ON (il rilievo lo fa l'hillshade), neutra quando e' OFF.
-  function shadeParams(){ const on=$('shadeOn').checked;
-    return { lit: on?{ambient:1,diffuse:0,specular:0,roughness:1}:{ambient:0.45,diffuse:0.95,specular:0.12,roughness:0.55}, lp:{x:-150,y:-220,z:900} }; }
-  // Ombreggiatura ON: colora il fondale con l'hillshade direzionale (grigi). OFF: ripristina i colori di profondita' originali.
+  // Illuminazione iniziale per show3D. COLORI (default): Luminosita'=ambient, Contrasto=diffuse -> il rilievo risalta MANTENENDO i colori.
+  // GRIGIO (opzione): luce piatta, il rilievo lo fa l'hillshade in surfacecolor.
+  function shadeParams(){ const on=$('shadeOn').checked, gray=on&&$('grayShade')&&$('grayShade').checked;
+    if(gray) return { lit:{ambient:1,diffuse:0,specular:0,roughness:1}, lp:{x:-150,y:-220,z:900} };
+    if(on){ const lum=parseFloat($('lightLum').value), contr=parseFloat($('lightContr').value);
+      return { lit:{ambient:isFinite(lum)?lum:0.25, diffuse:isFinite(contr)?contr:1.2, specular:0.28, roughness:0.32, fresnel:0.12}, lp:{x:-150,y:-220,z:900} }; }
+    return { lit:{ambient:0.45,diffuse:0.95,specular:0.12,roughness:0.55}, lp:{x:-150,y:-220,z:900} }; }
+  // Ombreggiatura: COLORI (batimetria + illuminazione tarata) oppure GRIGIO direzionale (hillshade come surfacecolor).
   function applyShading(){ if(!cur3d) return; const idx=(cur3d.surfIdx||[]).filter(i=>cur3d.base[i]&&cur3d.base[i].z); if(!idx.length) return;
-    const on=$('shadeOn').checked, sc=[],cs=[],cmin=[],cmax=[],ss=[],rev=[],lit=[];
-    if(on){ const az=parseFloat($('sunAz').value)||300, alt=parseFloat($('sunAlt').value)||35,
-              contr=parseFloat($('lightContr').value)||1.0, lum=parseFloat($('lightLum').value)||0.2, ramp=grayRamp(lum),
-              flat={ambient:1,diffuse:0,specular:0,roughness:1};
+    const on=$('shadeOn').checked, gray=on&&$('grayShade')&&$('grayShade').checked;
+    const lum=parseFloat($('lightLum').value), contr=parseFloat($('lightContr').value);
+    const sc=[],cs=[],cmin=[],cmax=[],ss=[],rev=[],lit=[];
+    if(gray){ const az=parseFloat($('sunAz').value)||315, alt=parseFloat($('sunAlt').value)||35, ramp=grayRamp(isFinite(lum)?lum:0.25), flat={ambient:1,diffuse:0,specular:0,roughness:1};
       idx.forEach(i=>{ const t=cur3d.base[i];
         if(!t._orig) t._orig={surfacecolor:t.surfacecolor,colorscale:t.colorscale,cmin:t.cmin,cmax:t.cmax,showscale:t.showscale,reversescale:t.reversescale};
-        const hs=hillshadeGrid(t.z,az,alt,contr);
+        const hs=hillshadeGrid(t.z,az,alt,isFinite(contr)?contr:1.2);
         t.surfacecolor=hs; t.colorscale=ramp; t.cmin=0; t.cmax=1; t.showscale=false; t.reversescale=false; t.lighting=flat;
         sc.push(hs); cs.push(ramp); cmin.push(0); cmax.push(1); ss.push(false); rev.push(false); lit.push(flat); });
-    } else { const normal={ambient:0.45,diffuse:0.95,specular:0.12,roughness:0.55};
+    } else {   // COLORI: ripristina i colori di profondita' (se si veniva dal grigio) e imposta l'illuminazione
+      const litObj = on ? {ambient:isFinite(lum)?lum:0.25, diffuse:isFinite(contr)?contr:1.2, specular:0.28, roughness:0.32, fresnel:0.12}
+                        : {ambient:0.45,diffuse:0.95,specular:0.12,roughness:0.55};
       idx.forEach(i=>{ const t=cur3d.base[i], o=t._orig;
         if(o){ t.surfacecolor=o.surfacecolor; t.colorscale=o.colorscale; t.cmin=o.cmin; t.cmax=o.cmax; t.showscale=o.showscale; t.reversescale=o.reversescale; }
-        t.lighting=normal;
-        sc.push(t.surfacecolor); cs.push(t.colorscale); cmin.push(t.cmin); cmax.push(t.cmax); ss.push(t.showscale); rev.push(!!t.reversescale); lit.push(normal); }); }
+        t.lighting=litObj;
+        sc.push(t.surfacecolor); cs.push(t.colorscale); cmin.push(t.cmin); cmax.push(t.cmax); ss.push(t.showscale); rev.push(!!t.reversescale); lit.push(litObj); }); }
     Plotly.restyle('zone',{surfacecolor:sc,colorscale:cs,cmin:cmin,cmax:cmax,showscale:ss,reversescale:rev,lighting:lit},idx);
   }
   // throttle: durante il trascinamento degli slider coalesce piu' input in un solo applyShading per frame (evita accumulo).
@@ -1142,6 +1152,7 @@ try {
   })();
   // Ombreggiatura rilievo (hillshade): toggle + azimut sole (riga Sole visibile solo se attiva).
   $('shadeOn').onchange=()=>{ $('rowSun').style.display=$('shadeOn').checked?'block':'none'; applyShading(); };
+  $('grayShade').onchange=()=>{ $('rowGray').style.display=$('grayShade').checked?'block':'none'; applyShading(); };
   $('sunAz').oninput=()=>{ $('sunAzVal').innerHTML=(parseInt($('sunAz').value,10)||0)+'&deg;'; scheduleShading(); };
   $('sunAlt').oninput=()=>{ $('sunAltVal').innerHTML=(parseInt($('sunAlt').value,10)||0)+'&deg;'; scheduleShading(); };
   $('lightLum').oninput=()=>{ $('lightLumVal').textContent=(parseFloat($('lightLum').value)||0).toFixed(2); scheduleShading(); };

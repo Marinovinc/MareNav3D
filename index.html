@@ -132,7 +132,7 @@
 <button id="btnBack3d">&#8592; Carta</button>
 <div id="zoneReadout"></div>
 <div id="sectionPanel">
-  <div class="sHd"><b>Sezione fondale</b><span id="sectionInfo"></span><button id="sectionClose" title="Chiudi">&#10005;</button></div>
+  <div class="sHd"><b>Sezione fondale</b><span id="sectionInfo"></span><button id="sectionRecenter" title="Torna alla vista di quando hai tracciato la sezione (riallinea A e B)" style="background:none;border:1px solid #2c6b8a;color:#8df0ff;font-size:11px;border-radius:6px;padding:2px 7px;cursor:pointer;white-space:nowrap">&#8617; Vista sezione</button><button id="sectionClose" title="Chiudi">&#10005;</button></div>
   <div id="sectionChart"></div>
 </div>
 <div id="statsPanel"></div>
@@ -593,7 +593,7 @@ try {
     }
     return {X,Y};
   }
-  let cur3d=null, seabedStyle='classic', lastGrid=null, boat3d=null, section3d={a:null,b:null}, sectionMode=false;   // sectionMode: superficie 3D rada quando la Sezione e' attiva (evita freeze GPU); dati profilo restano full-res in lastGrid
+  let cur3d=null, seabedStyle='classic', lastGrid=null, boat3d=null, section3d={a:null,b:null}, sectionMode=false, sectionCam=null;   // sectionCam: camera al momento del sezionamento (pulsante "Vista sezione")
   let boatGpsMode=false, gps3dLast=0;   // barca GPS live in 3D: da onPos aggiorna boat3d (throttle 1.5s)
   let dragPan=false;   // interazione scena 3D: false=ruota (turntable), true=sposta (pan)
   let lastHoverPt=null;   // ultimo punto del fondale sotto il cursore (dati lon/lat/z) -> zoom verso il cursore
@@ -713,6 +713,7 @@ try {
     const pt=ev&&ev.points&&ev.points.find(p=>p.data&&p.data.type==='surface'); if(!pt||pt.x==null||pt.y==null) return;
     let px=lastZonePx.x, py=lastZonePx.y;
     const me=ev.event; if(me && me.clientX!=null){ const zr=$('zone').getBoundingClientRect(); px=me.clientX-zr.left; py=me.clientY-zr.top; }   // preferisci il pixel dell'evento se presente
+    sectionCam=liveCamera();   // memorizza la vista al momento del click (per riallineare A/B con "Vista sezione")
     if(!section3d.a || (section3d.a && section3d.b)){ section3d={a:{lon:pt.x,lat:pt.y,px:px,py:py},b:null}; $('sectionPanel').style.display='none'; readout3dHint('Sezione: punto <b>A</b> segnato &middot; tocca il punto <b>B</b>'); drawSectionOverlay(); }
     else { section3d.b={lon:pt.x,lat:pt.y,px:px,py:py}; drawSectionOverlay(); showSectionProfile(); drawSectionOnMap(); readout3dHint('Sezione <b>A</b>&ndash;<b>B</b> tracciata &middot; tocca di nuovo per rifarla'); }   // overlay 2D + profilo (nessun ridisegno del 3D)
   }
@@ -1030,6 +1031,8 @@ try {
   $('sectionOn').onchange=()=>{ section3d={a:null,b:null}; $('sectionPanel').style.display='none'; drawSectionOverlay(); drawSectionOnMap();
     if($('sectionOn').checked) readout3dHint('Sezione: tocca il punto <b>A</b> poi il punto <b>B</b> sul fondale'); };
   $('sectionClose').onclick=()=>{ $('sectionPanel').style.display='none'; section3d={a:null,b:null}; if($('sectionOn')) $('sectionOn').checked=false; drawSectionOverlay(); drawSectionOnMap(); };
+  // "Vista sezione": riporta la camera del fondale all'angolazione di quando A/B sono stati tracciati -> l'overlay 2D (a pixel fissi) torna allineato alla superficie.
+  $('sectionRecenter').onclick=()=>{ if(sectionCam) Plotly.relayout('zone',{'scene.camera':sectionCam}); };
   // Isobata target: evidenzia la fascia di profondita' scelta (riga fascia visibile solo se attiva).
   $('isobandOn').onchange=()=>{ $('rowIso').style.display=$('isobandOn').checked?'flex':'none'; render3DScene(); };
   $('isobandFrom').oninput=()=>{ if($('isobandOn').checked) render3DScene(); };

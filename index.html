@@ -183,11 +183,13 @@
         <label title="La scena segue la tua posizione GPS reale"><input type="checkbox" id="boatGpsOn"> Barca GPS</label>
         <label title="Tocca 2 punti: profilo verticale del fondale tra i due"><input type="checkbox" id="sectionOn"> Sezione</label>
         <label title="Evidenzia scarpate ripide e banchi (euristica)"><input type="checkbox" id="upwellOn"> Upwelling</label>
-        <label title="Evidenzia una fascia di profondità scelta"><input type="checkbox" id="isobandOn"> Isobata</label>
+        <label title="Evidenzia una FASCIA di profondità scelta (marker verde-lime)"><input type="checkbox" id="isobandOn"> Fascia</label>
+        <label title="Linee isobate: curve di livello a profondità costante sul fondale (intervallo regolabile)"><input type="checkbox" id="isoLinesOn"> Isobate</label>
         <label title="Area, profondità min/media/max, pendenza, fasce"><input type="checkbox" id="statsOn"> Statistiche</label>
         <label title="Piani di riferimento a profondità regolabile"><input type="checkbox" id="planesOn"> Piani prof.</label>
       </div>
       <div class="ctlRow ctlSub" id="rowIso" style="display:none"><span>fascia</span><input id="isobandFrom" type="number" value="80" min="0" step="10">&ndash;<input id="isobandTo" type="number" value="120" min="0" step="10"> m</div>
+      <div class="ctlRow ctlSub" id="rowIsoLines" style="display:none"><span>isobate ogni</span><input id="isoStep" type="number" value="100" min="10" step="10"> m</div>
       <div class="ctlRow ctlSub" id="rowPlanes" style="display:none"><span>ogni</span><input type="number" id="planesStep" value="500" min="50" step="50"><span>m</span></div>
     </div>
   </div>
@@ -836,6 +838,12 @@ try {
   // throttle: durante il trascinamento degli slider coalesce piu' input in un solo applyShading per frame (evita accumulo).
   let _shadeRAF=0;
   function scheduleShading(){ if(_shadeRAF||!$('shadeOn').checked) return; _shadeRAF=requestAnimationFrame(()=>{ _shadeRAF=0; if($('shadeOn').checked) applyShading(); }); }
+  // Linee isobate: curve di livello a profondita' costante (contours.z di Plotly surface) sul fondale, intervallo regolabile.
+  function applyIsoLines(){ if(!cur3d||!cur3d.surfIdx||!cur3d.surfIdx.length) return;
+    const on=$('isoLinesOn')&&$('isoLinesOn').checked, step=Math.max(10,parseFloat($('isoStep').value)||100), seabed=[cur3d.surfIdx[0]];
+    if(on) Plotly.restyle('zone',{'contours.z.show':true,'contours.z.size':step,'contours.z.start':-12000,'contours.z.end':0,'contours.z.width':1.2,'contours.z.color':'#cfe6ff','contours.z.usecolormap':false,'contours.z.highlight':false},seabed);
+    else Plotly.restyle('zone',{'contours.z.show':false},seabed);
+  }
   // Statistiche area (da lastGrid): area, prof. min/media/max, pendenza media, % area per fascia di profondita'.
   function computeStatsHtml(){
     if(!lastGrid) return '';
@@ -1051,6 +1059,7 @@ try {
     await Plotly.newPlot('zone',[...cur3d.base,...seaLevelTrace(),...boat3dTraces(),...section3dTraces(),...isobandTraces(),...upwellTraces(),...buildPlanes()],layout,{displayModeBar:false,responsive:true,doubleClick:false});
     $('zone3dov').style.display='none';   // overlay gl3d sovrapposto disattivato (non renderizzava su GPU reali) -> Sezione usa overlay 2D SVG
     if($('shadeOn')&&$('shadeOn').checked) applyShading();   // ri-applica l'hillshade sulla scena appena (ri)costruita
+    if($('isoLinesOn')&&$('isoLinesOn').checked) applyIsoLines();   // ri-applica le linee isobate
     // Task 2/4 + sezione: aggancia readout + tap (newPlot azzera i listener -> ri-bind ad ogni ridisegno)
     const zoneEl=$('zone');
     zoneEl.on('plotly_hover', updateZoneReadout);
@@ -1093,6 +1102,9 @@ try {
   $('isobandOn').onchange=()=>{ $('rowIso').style.display=$('isobandOn').checked?'flex':'none'; render3DScene(); };
   $('isobandFrom').oninput=()=>{ if($('isobandOn').checked) render3DScene(); };
   $('isobandTo').oninput=()=>{ if($('isobandOn').checked) render3DScene(); };
+  // Linee isobate (curve di livello sul fondale)
+  $('isoLinesOn').onchange=()=>{ $('rowIsoLines').style.display=$('isoLinesOn').checked?'flex':'none'; applyIsoLines(); };
+  $('isoStep').oninput=()=>{ if($('isoLinesOn').checked) applyIsoLines(); };
   // Barca GPS live in 3D: accende il GPS reale; la scena segue la posizione (aggiornamento throttled dentro onPos).
   $('boatGpsOn').onchange=()=>{ boatGpsMode=$('boatGpsOn').checked;
     if(boatGpsMode){ if(watchId==null) startGps(); readout3dHint('Barca GPS live: la scena seguira&rsquo; la tua posizione reale'); } };

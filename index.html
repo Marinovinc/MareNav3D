@@ -715,7 +715,7 @@ try {
     const me=ev.event; if(me && me.clientX!=null){ const zr=$('zone').getBoundingClientRect(); px=me.clientX-zr.left; py=me.clientY-zr.top; }   // preferisci il pixel dell'evento se presente
     sectionCam=liveCamera();   // memorizza la vista al momento del click (per riallineare A/B con "Vista sezione")
     if(!section3d.a || (section3d.a && section3d.b)){ section3d={a:{lon:pt.x,lat:pt.y,px:px,py:py},b:null}; $('sectionPanel').style.display='none'; readout3dHint('Sezione: punto <b>A</b> segnato &middot; tocca il punto <b>B</b>'); drawSectionOverlay(); }
-    else { section3d.b={lon:pt.x,lat:pt.y,px:px,py:py}; drawSectionOverlay(); showSectionProfile(); drawSectionOnMap(); readout3dHint('Sezione <b>A</b>&ndash;<b>B</b> tracciata &middot; tocca di nuovo per rifarla'); }   // overlay 2D + profilo (nessun ridisegno del 3D)
+    else { section3d.b={lon:pt.x,lat:pt.y,px:px,py:py}; drawSectionOverlay(); showSectionProfile(); drawSectionOnMap(); $('sectionOn').checked=false; readout3dHint('Sezione <b>A</b>&ndash;<b>B</b> tracciata &middot; ri-attiva <b>Sezione</b> per tracciarne un\'altra'); }   // COMPLETATA: esco dalla modalita' piazzamento (checked=false NON scatta onchange -> A/B restano). I click successivi vanno alle altre funzioni, NON resettano A.
   }
   // Overlay 2D (SVG) di A/B + linea di congiunzione, sopra il canvas 3D. Usa i pixel del click: nessuna traccia gl3d -> nessun freeze.
   function drawSectionOverlay(){

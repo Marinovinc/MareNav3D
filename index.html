@@ -784,17 +784,48 @@ try {
   // La Sezione vive nel grafico 2D (showSectionProfile), NON nel modello 3D: qualsiasi modifica alla scena
   // gl3d ri-renderizza l'intera superficie densa (centinaia di migliaia di vertici) e blocca le GPU deboli.
   // Ombreggiatura rilievo (hillshade): luce radente regolabile per azimut del sole -> scarpate/canyon in risalto.
-  function sunLightPos(az, alt){ const r=(az||0)*Math.PI/180, e=Math.max(5,Math.min(85,(alt==null?35:alt)))*Math.PI/180, R=300;
-    const h=Math.cos(e)*R, z=Math.max(60,Math.sin(e)*R*3);   // altezza sull'orizzonte -> componente verticale: bassa=radente (rilievo forte), alta=dall'alto (piatto)
-    return {x:Math.cos(r)*h, y:Math.sin(r)*h, z:z}; }
+  // NB: Plotly gl3d IGNORA lightposition sulle superfici (verificato: direzione luce = nessun effetto) -> l'ombreggiatura
+  // DIREZIONALE la calcoliamo noi (hillshade dal rilievo) e la mettiamo come surfacecolor. Risponde ad azimut/altezza.
+  function hillshadeGrid(zz, az, alt, contr){
+    const R=zz.length, C=zz[0].length, zen=(90-Math.max(5,Math.min(85,alt||35)))*Math.PI/180, azr=(az||0)*Math.PI/180;
+    const scale=Math.max(20, 320/Math.max(0.15,contr||1));   // contrasto alto -> scala bassa -> pendenze amplificate
+    const hs=[];
+    for(let i=0;i<R;i++){ const row=new Array(C);
+      for(let j=0;j<C;j++){ const v=zz[i][j]; if(v==null){row[j]=null;continue;}
+        const l=zz[i][j>0?j-1:0], r=zz[i][j<C-1?j+1:C-1], u=zz[i>0?i-1:0][j], d=zz[i<R-1?i+1:R-1][j];
+        const dzdx=(((r==null?v:r)-(l==null?v:l))/2)/scale, dzdy=(((u==null?v:u)-(d==null?v:d))/2)/scale;
+        const slope=Math.atan(Math.sqrt(dzdx*dzdx+dzdy*dzdy)), aspect=Math.atan2(dzdy,-dzdx);
+        let s=Math.cos(zen)*Math.cos(slope)+Math.sin(zen)*Math.sin(slope)*Math.cos(azr-aspect);
+        row[j]=Math.max(0,Math.min(1,s)); }
+      hs.push(row); }
+    return hs;
+  }
+  function grayRamp(lum){ const g=v=>{v=Math.max(0,Math.min(255,Math.round(v)));return 'rgb('+v+','+v+','+Math.min(255,Math.round(v*1.03))+')';};
+    const lo=12+lum*40, hi=110+Math.min(0.9,lum)*150; return [[0,g(lo)],[0.5,g((lo+hi)/2)],[1,g(hi)]]; }
+  // per show3D: luce piatta quando l'ombreggiatura e' ON (il rilievo lo fa l'hillshade), neutra quando e' OFF.
   function shadeParams(){ const on=$('shadeOn').checked;
-    if(!on) return { lit:{ambient:0.45,diffuse:0.95,specular:0.12,roughness:0.55}, lp:{x:-150,y:-220,z:900} };   // ombreggiatura OFF: luce neutra
-    const lum=parseFloat($('lightLum').value), contr=parseFloat($('lightContr').value);
-    return { lit:{ambient:isFinite(lum)?lum:0.20, diffuse:isFinite(contr)?contr:1.0, specular:0.35, roughness:0.36, fresnel:0.15},
-             lp: sunLightPos(parseFloat($('sunAz').value)||300, parseFloat($('sunAlt').value)||35) }; }
-  function applyShading(){ if(!cur3d||!cur3d.surfIdx) return; const sp=shadeParams();
-    cur3d.surfIdx.forEach(i=>{ if(cur3d.base[i]){ cur3d.base[i].lighting=sp.lit; cur3d.base[i].lightposition=sp.lp; } });
-    Plotly.restyle('zone',{lighting:sp.lit, lightposition:sp.lp}, cur3d.surfIdx); }
+    return { lit: on?{ambient:1,diffuse:0,specular:0,roughness:1}:{ambient:0.45,diffuse:0.95,specular:0.12,roughness:0.55}, lp:{x:-150,y:-220,z:900} }; }
+  // Ombreggiatura ON: colora il fondale con l'hillshade direzionale (grigi). OFF: ripristina i colori di profondita' originali.
+  function applyShading(){ if(!cur3d) return; const idx=(cur3d.surfIdx||[]).filter(i=>cur3d.base[i]&&cur3d.base[i].z); if(!idx.length) return;
+    const on=$('shadeOn').checked, sc=[],cs=[],cmin=[],cmax=[],ss=[],rev=[],lit=[];
+    if(on){ const az=parseFloat($('sunAz').value)||300, alt=parseFloat($('sunAlt').value)||35,
+              contr=parseFloat($('lightContr').value)||1.0, lum=parseFloat($('lightLum').value)||0.2, ramp=grayRamp(lum),
+              flat={ambient:1,diffuse:0,specular:0,roughness:1};
+      idx.forEach(i=>{ const t=cur3d.base[i];
+        if(!t._orig) t._orig={surfacecolor:t.surfacecolor,colorscale:t.colorscale,cmin:t.cmin,cmax:t.cmax,showscale:t.showscale,reversescale:t.reversescale};
+        const hs=hillshadeGrid(t.z,az,alt,contr);
+        t.surfacecolor=hs; t.colorscale=ramp; t.cmin=0; t.cmax=1; t.showscale=false; t.reversescale=false; t.lighting=flat;
+        sc.push(hs); cs.push(ramp); cmin.push(0); cmax.push(1); ss.push(false); rev.push(false); lit.push(flat); });
+    } else { const normal={ambient:0.45,diffuse:0.95,specular:0.12,roughness:0.55};
+      idx.forEach(i=>{ const t=cur3d.base[i], o=t._orig;
+        if(o){ t.surfacecolor=o.surfacecolor; t.colorscale=o.colorscale; t.cmin=o.cmin; t.cmax=o.cmax; t.showscale=o.showscale; t.reversescale=o.reversescale; }
+        t.lighting=normal;
+        sc.push(t.surfacecolor); cs.push(t.colorscale); cmin.push(t.cmin); cmax.push(t.cmax); ss.push(t.showscale); rev.push(!!t.reversescale); lit.push(normal); }); }
+    Plotly.restyle('zone',{surfacecolor:sc,colorscale:cs,cmin:cmin,cmax:cmax,showscale:ss,reversescale:rev,lighting:lit},idx);
+  }
+  // throttle: durante il trascinamento degli slider coalesce piu' input in un solo applyShading per frame (evita accumulo).
+  let _shadeRAF=0;
+  function scheduleShading(){ if(_shadeRAF||!$('shadeOn').checked) return; _shadeRAF=requestAnimationFrame(()=>{ _shadeRAF=0; if($('shadeOn').checked) applyShading(); }); }
   // Statistiche area (da lastGrid): area, prof. min/media/max, pendenza media, % area per fascia di profondita'.
   function computeStatsHtml(){
     if(!lastGrid) return '';
@@ -1009,6 +1040,7 @@ try {
             eye0:{x:veEye.x,y:veEye.y,z:veEye.z}, d0:Math.hypot(veEye.x,veEye.y,veEye.z) };   // camera default + distanza iniziale (per clamp zoom e reset)
     await Plotly.newPlot('zone',[...cur3d.base,...seaLevelTrace(),...boat3dTraces(),...section3dTraces(),...isobandTraces(),...upwellTraces(),...buildPlanes()],layout,{displayModeBar:false,responsive:true,doubleClick:false});
     $('zone3dov').style.display='none';   // overlay gl3d sovrapposto disattivato (non renderizzava su GPU reali) -> Sezione usa overlay 2D SVG
+    if($('shadeOn')&&$('shadeOn').checked) applyShading();   // ri-applica l'hillshade sulla scena appena (ri)costruita
     // Task 2/4 + sezione: aggancia readout + tap (newPlot azzera i listener -> ri-bind ad ogni ridisegno)
     const zoneEl=$('zone');
     zoneEl.on('plotly_hover', updateZoneReadout);
@@ -1110,10 +1142,10 @@ try {
   })();
   // Ombreggiatura rilievo (hillshade): toggle + azimut sole (riga Sole visibile solo se attiva).
   $('shadeOn').onchange=()=>{ $('rowSun').style.display=$('shadeOn').checked?'block':'none'; applyShading(); };
-  $('sunAz').oninput=()=>{ $('sunAzVal').innerHTML=(parseInt($('sunAz').value,10)||0)+'&deg;'; if($('shadeOn').checked) applyShading(); };
-  $('sunAlt').oninput=()=>{ $('sunAltVal').innerHTML=(parseInt($('sunAlt').value,10)||0)+'&deg;'; if($('shadeOn').checked) applyShading(); };
-  $('lightLum').oninput=()=>{ $('lightLumVal').textContent=(parseFloat($('lightLum').value)||0).toFixed(2); if($('shadeOn').checked) applyShading(); };
-  $('lightContr').oninput=()=>{ $('lightContrVal').textContent=(parseFloat($('lightContr').value)||0).toFixed(2); if($('shadeOn').checked) applyShading(); };
+  $('sunAz').oninput=()=>{ $('sunAzVal').innerHTML=(parseInt($('sunAz').value,10)||0)+'&deg;'; scheduleShading(); };
+  $('sunAlt').oninput=()=>{ $('sunAltVal').innerHTML=(parseInt($('sunAlt').value,10)||0)+'&deg;'; scheduleShading(); };
+  $('lightLum').oninput=()=>{ $('lightLumVal').textContent=(parseFloat($('lightLum').value)||0).toFixed(2); scheduleShading(); };
+  $('lightContr').oninput=()=>{ $('lightContrVal').textContent=(parseFloat($('lightContr').value)||0).toFixed(2); scheduleShading(); };
   // Statistiche area: pannello on/off.
   $('statsOn').onchange=toggleStats;
   // Task 3: switch euristica upwelling (evidenzia scarpate ripide + banchi/dorsali del fondale).

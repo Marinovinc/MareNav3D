@@ -167,7 +167,7 @@
         <label title="Attiva ombreggiatura (luce radente) e i controlli di luminosità, contrasto e direzione della luce sul rilievo"><input type="checkbox" id="shadeOn"> Ombreggiatura</label>
       </div>
       <div id="rowSun" style="display:none">
-        <div class="ctlRow ctlSub"><span title="Chiarezza generale dell'ombreggiatura">Luminosità</span><input type="range" id="lightLum" min="0.10" max="0.90" step="0.05" value="0.25"><b id="lightLumVal">0.25</b></div>
+        <div class="ctlRow ctlSub"><span title="Chiarezza generale: bassa = ombre profonde (rilievo forte); alta = fondale più luminoso">Luminosità</span><input type="range" id="lightLum" min="0.10" max="1.60" step="0.05" value="0.25"><b id="lightLumVal">0.25</b></div>
         <div class="ctlRow ctlSub"><span title="Quanto risalta il rilievo (ombre più marcate)">Contrasto</span><input type="range" id="lightContr" min="0.2" max="1.6" step="0.05" value="1.20"><b id="lightContrVal">1.20</b></div>
         <label class="ctlSub" style="font-size:11px;display:block;margin:3px 0 1px" title="Rilievo ombreggiato in GRIGI con direzione della luce controllabile (perde i colori di profondità)"><input type="checkbox" id="grayShade"> Rilievo grigio (luce direzionale)</label>
         <div id="rowGray" style="display:none">
@@ -804,7 +804,7 @@ try {
     return hs;
   }
   function grayRamp(lum){ const g=v=>{v=Math.max(0,Math.min(255,Math.round(v)));return 'rgb('+v+','+v+','+Math.min(255,Math.round(v*1.03))+')';};
-    const lo=12+lum*40, hi=110+Math.min(0.9,lum)*150; return [[0,g(lo)],[0.5,g((lo+hi)/2)],[1,g(hi)]]; }
+    const lo=12+lum*40, hi=110+lum*150; return [[0,g(lo)],[0.5,g((lo+hi)/2)],[1,g(hi)]]; }   // lum piu' alta -> ramp piu' chiara (g() satura a 255)
   // per show3D: luce piatta quando l'ombreggiatura e' ON (il rilievo lo fa l'hillshade), neutra quando e' OFF.
   // Illuminazione iniziale per show3D. COLORI (default): Luminosita'=ambient, Contrasto=diffuse -> il rilievo risalta MANTENENDO i colori.
   // GRIGIO (opzione): luce piatta, il rilievo lo fa l'hillshade in surfacecolor.

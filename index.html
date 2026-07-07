@@ -156,12 +156,22 @@
         <label title="Superficie unica topografica con isolinee (stile ROTTA_A_3D) invece delle 2 superfici mare/terra"><input type="checkbox" id="styleRotta"> Topografico</label>
         <label title="Pannelli di sfondo verticali del cubo 3D (assi x/y)"><input type="checkbox" id="wallsOn"> Pareti box</label>
         <label title="Piano di riferimento orizzontale a quota 0"><input type="checkbox" id="seaLevelOn"> Livello mare</label>
-        <label title="Luce radente per far risaltare il rilievo (hillshade)"><input type="checkbox" id="shadeOn"> Ombra rilievo</label>
         <label title="Texture di rugosita' STIMATA (frattale) sotto i 115 m EMODnet: solo estetica, NON profondita' reale"><input type="checkbox" id="fractalOn"> Rilievo stimato</label>
       </div>
-      <div class="ctlRow ctlSub" id="rowSun" style="display:none"><span>Sole</span><input type="range" id="sunAz" min="0" max="360" step="15" value="300"><b id="sunAzVal">300&deg;</b></div>
       <div class="ctlRow"><span>Rilievo</span><input type="range" id="veSlider" min="1" max="8" step="0.5" value="3"><b id="veVal">3.0×</b></div>
       <div class="ctlRow"><span>Trasp.</span><input type="range" id="xraySlider" min="0" max="100" step="5" value="0"><b id="xrayVal">0%</b></div>
+    </div>
+    <div class="ctlGrp">
+      <div class="ctlH">Grafica rilievo</div>
+      <div class="ctlGrid">
+        <label title="Attiva ombreggiatura (luce radente) e i controlli di luminosità, contrasto e direzione della luce sul rilievo"><input type="checkbox" id="shadeOn"> Ombreggiatura</label>
+      </div>
+      <div id="rowSun" style="display:none">
+        <div class="ctlRow ctlSub"><span title="Luce ambientale: più alta = fondale più chiaro e piatto">Luminosità</span><input type="range" id="lightLum" min="0.10" max="0.90" step="0.05" value="0.20"><b id="lightLumVal">0.20</b></div>
+        <div class="ctlRow ctlSub"><span title="Componente direzionale: più alto = maggiore stacco luci/ombre sui rilievi">Contrasto</span><input type="range" id="lightContr" min="0.2" max="1.5" step="0.05" value="1.00"><b id="lightContrVal">1.00</b></div>
+        <div class="ctlRow ctlSub"><span title="Direzione orizzontale della luce (azimut del sole)">Azimut luce</span><input type="range" id="sunAz" min="0" max="360" step="15" value="300"><b id="sunAzVal">300&deg;</b></div>
+        <div class="ctlRow ctlSub"><span title="Altezza della luce sull'orizzonte: bassa = radente (ombre lunghe, rilievo forte); alta = dall'alto (piatto)">Altezza luce</span><input type="range" id="sunAlt" min="5" max="85" step="5" value="35"><b id="sunAltVal">35&deg;</b></div>
+      </div>
     </div>
     <div class="ctlGrp">
       <div class="ctlH">Strumenti</div>
@@ -774,10 +784,14 @@ try {
   // La Sezione vive nel grafico 2D (showSectionProfile), NON nel modello 3D: qualsiasi modifica alla scena
   // gl3d ri-renderizza l'intera superficie densa (centinaia di migliaia di vertici) e blocca le GPU deboli.
   // Ombreggiatura rilievo (hillshade): luce radente regolabile per azimut del sole -> scarpate/canyon in risalto.
-  function sunLightPos(az){ const r=(az||0)*Math.PI/180, R=300; return {x:Math.cos(r)*R, y:Math.sin(r)*R, z:500}; }
+  function sunLightPos(az, alt){ const r=(az||0)*Math.PI/180, e=Math.max(5,Math.min(85,(alt==null?35:alt)))*Math.PI/180, R=300;
+    const h=Math.cos(e)*R, z=Math.max(60,Math.sin(e)*R*3);   // altezza sull'orizzonte -> componente verticale: bassa=radente (rilievo forte), alta=dall'alto (piatto)
+    return {x:Math.cos(r)*h, y:Math.sin(r)*h, z:z}; }
   function shadeParams(){ const on=$('shadeOn').checked;
-    return { lit: on?{ambient:0.20,diffuse:1.0,specular:0.35,roughness:0.36,fresnel:0.15}:{ambient:0.45,diffuse:0.95,specular:0.12,roughness:0.55},
-             lp:  on?sunLightPos(parseFloat($('sunAz').value)||300):{x:-150,y:-220,z:900} }; }
+    if(!on) return { lit:{ambient:0.45,diffuse:0.95,specular:0.12,roughness:0.55}, lp:{x:-150,y:-220,z:900} };   // ombreggiatura OFF: luce neutra
+    const lum=parseFloat($('lightLum').value), contr=parseFloat($('lightContr').value);
+    return { lit:{ambient:isFinite(lum)?lum:0.20, diffuse:isFinite(contr)?contr:1.0, specular:0.35, roughness:0.36, fresnel:0.15},
+             lp: sunLightPos(parseFloat($('sunAz').value)||300, parseFloat($('sunAlt').value)||35) }; }
   function applyShading(){ if(!cur3d||!cur3d.surfIdx) return; const sp=shadeParams();
     cur3d.surfIdx.forEach(i=>{ if(cur3d.base[i]){ cur3d.base[i].lighting=sp.lit; cur3d.base[i].lightposition=sp.lp; } });
     Plotly.restyle('zone',{lighting:sp.lit, lightposition:sp.lp}, cur3d.surfIdx); }
@@ -1095,8 +1109,11 @@ try {
     z.addEventListener('pointercancel', ()=>{ dn=null; }, true);
   })();
   // Ombreggiatura rilievo (hillshade): toggle + azimut sole (riga Sole visibile solo se attiva).
-  $('shadeOn').onchange=()=>{ $('rowSun').style.display=$('shadeOn').checked?'flex':'none'; applyShading(); };
+  $('shadeOn').onchange=()=>{ $('rowSun').style.display=$('shadeOn').checked?'block':'none'; applyShading(); };
   $('sunAz').oninput=()=>{ $('sunAzVal').innerHTML=(parseInt($('sunAz').value,10)||0)+'&deg;'; if($('shadeOn').checked) applyShading(); };
+  $('sunAlt').oninput=()=>{ $('sunAltVal').innerHTML=(parseInt($('sunAlt').value,10)||0)+'&deg;'; if($('shadeOn').checked) applyShading(); };
+  $('lightLum').oninput=()=>{ $('lightLumVal').textContent=(parseFloat($('lightLum').value)||0).toFixed(2); if($('shadeOn').checked) applyShading(); };
+  $('lightContr').oninput=()=>{ $('lightContrVal').textContent=(parseFloat($('lightContr').value)||0).toFixed(2); if($('shadeOn').checked) applyShading(); };
   // Statistiche area: pannello on/off.
   $('statsOn').onchange=toggleStats;
   // Task 3: switch euristica upwelling (evidenzia scarpate ripide + banchi/dorsali del fondale).

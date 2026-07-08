@@ -182,7 +182,8 @@
         <label title="Barca + ecoscandaglio: tocca il fondale per spostarla"><input type="checkbox" id="boatOn"> Barca</label>
         <label title="La scena segue la tua posizione GPS reale"><input type="checkbox" id="boatGpsOn"> Barca GPS</label>
         <label title="Tocca 2 punti: profilo verticale del fondale tra i due"><input type="checkbox" id="sectionOn"> Sezione</label>
-        <label title="Evidenzia scarpate ripide e banchi (euristica)"><input type="checkbox" id="upwellOn"> Upwelling</label>
+        <label title="Evidenzia scarpate ripide e banchi (euristica morfologica)"><input type="checkbox" id="upwellOn"> Upwelling</label>
+        <label title="Upwelling avanzato: modula la morfologia con la CORRENTE reale (Open-Meteo) all'ora scelta"><input type="checkbox" id="upwellAdvOn"> Upwelling+</label>
         <label title="Evidenzia una FASCIA di profondità scelta (marker verde-lime)"><input type="checkbox" id="isobandOn"> Fascia</label>
         <label title="Linee isobate: curve di livello a profondità costante sul fondale (intervallo regolabile)"><input type="checkbox" id="isoLinesOn"> Isobate</label>
         <label title="Area, profondità min/media/max, pendenza, fasce"><input type="checkbox" id="statsOn"> Statistiche</label>
@@ -190,6 +191,7 @@
       </div>
       <div class="ctlRow ctlSub" id="rowIso" style="display:none"><span>fascia</span><input id="isobandFrom" type="number" value="80" min="0" step="10">&ndash;<input id="isobandTo" type="number" value="120" min="0" step="10"> m</div>
       <div class="ctlRow ctlSub" id="rowIsoLines" style="display:none"><span>isobate ogni</span><input id="isoStep" type="number" value="100" min="10" step="10"> m</div>
+      <div class="ctlRow ctlSub" id="rowUpwellAdv" style="display:none;flex-wrap:wrap;gap:4px"><input type="datetime-local" id="upwellDateTime" style="font-size:10px;background:#11243c;border:1px solid #2c416c;color:#dfeaf5;border-radius:5px"><span id="upwellMeteo" style="font-size:10px;color:#8fb0cc">&mdash;</span></div>
       <div class="ctlRow ctlSub" id="rowPlanes" style="display:none"><span>ogni</span><input type="number" id="planesStep" value="500" min="50" step="50"><span>m</span></div>
     </div>
   </div>
@@ -636,8 +638,32 @@ try {
   // Task 3: euristica "upwelling" dalla sola batimetria. Evidenzia i punti a maggiore probabilita' di risalita/aggregazione:
   // (a) SCARPATE = alto gradiente di profondita' (|grad z| in m/m); (b) BANCHI/DORSALI = convessita' positiva (fondo piu' alto dei vicini).
   // Punteggio = 0.75*pendenza_norm + 0.25*convessita_norm (normalizzate al 95-esimo percentile); mostra il top ~12% come marker caldi drappeggiati.
+  // Upwelling+: condizioni meteo-mare reali (Open-Meteo) al centro area e all'ora scelta. Correnti (marine API) + vento (forecast API).
+  let meteoMarine=null;   // {current:{spd,dir}, wind:{spd,dir}, time}
+  async function fetchMeteoMarine(){
+    if(!lastGrid) return;
+    const bb=lastGrid.bb, lat=((bb.latS+bb.latN)/2).toFixed(3), lon=((bb.lonW+bb.lonE)/2).toFixed(3);
+    const dt=$('upwellDateTime').value; if(!dt){ return; }
+    const hourISO=dt.slice(0,13)+':00';   // YYYY-MM-DDTHH:00 (locale, come timezone=auto)
+    $('upwellMeteo').textContent='carico meteo-mare…';
+    try{
+      const [mR,wR]=await Promise.all([
+        fetch('https://marine-api.open-meteo.com/v1/marine?latitude='+lat+'&longitude='+lon+'&hourly=ocean_current_velocity,ocean_current_direction&timezone=auto&forecast_days=7'),
+        fetch('https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lon+'&hourly=wind_speed_10m,wind_direction_10m&timezone=auto&forecast_days=7')
+      ]);
+      const m=await mR.json(), w=await wR.json();
+      const mi=m.hourly.time.indexOf(hourISO), wi=w.hourly.time.indexOf(hourISO);
+      if(mi<0){ $('upwellMeteo').textContent='ora fuori intervallo (max +7 giorni)'; meteoMarine=null; render3DScene(); return; }
+      meteoMarine={ current:{spd:m.hourly.ocean_current_velocity[mi], dir:m.hourly.ocean_current_direction[mi]},
+        wind:(wi>=0?{spd:w.hourly.wind_speed_10m[wi], dir:w.hourly.wind_direction_10m[wi]}:null), time:hourISO };
+      const c=meteoMarine.current, wd=meteoMarine.wind;
+      $('upwellMeteo').innerHTML='corrente <b>'+(c.spd!=null?c.spd.toFixed(1):'?')+' km/h</b> '+Math.round(c.dir||0)+'&deg;'+(wd&&wd.spd!=null?' &middot; vento '+wd.spd.toFixed(0)+' km/h '+Math.round(wd.dir||0)+'&deg;':'');
+      render3DScene();
+    }catch(e){ $('upwellMeteo').textContent='errore meteo-mare (rete?)'; meteoMarine=null; }
+  }
   function upwellTraces(){
-    if(!$('upwellOn').checked || !lastGrid) return [];
+    const basicOn=$('upwellOn').checked, advOn=$('upwellAdvOn')&&$('upwellAdvOn').checked;
+    if((!basicOn && !advOn) || !lastGrid) return [];
     const g=lastGrid, zz=g.zz, rows=g.rows, cols=g.cols, lats=g.lats, lons=g.lons;
     const cLat=(g.bb.latS+g.bb.latN)/2*Math.PI/180;
     const cellMx=Math.max(5,((g.bb.lonE-g.bb.lonW)/(cols-1))*111320*Math.cos(cLat));
@@ -647,18 +673,23 @@ try {
       const v=zz[i][j]; if(v==null||v>0) continue;   // solo mare
       const l=zz[i][j-1],r=zz[i][j+1],u=zz[i-1][j],d=zz[i+1][j];
       if(l==null||r==null||u==null||d==null) continue;
-      const dzdx=(r-l)/(2*cellMx), dzdy=(u-d)/(2*cellMy);
+      const dzdx=(r-l)/(2*cellMx), dzdy=(u-d)/(2*cellMy);   // gradiente z: punta verso il meno profondo (in salita)
       const slope=Math.sqrt(dzdx*dzdx+dzdy*dzdy);   // pendenza fondale (m/m)
       const conv=v-(l+r+u+d)/4;                      // convessita': >0 = banco/dorsale
-      cells.push({i,j,slope,conv});
+      cells.push({i,j,slope,conv,dzdx,dzdy});
     }
     if(!cells.length) return [];
     const sl=cells.map(c=>c.slope).sort((a,b)=>a-b);
     const p95=sl[Math.floor(sl.length*0.95)]||sl[sl.length-1]||1;
     const cv=cells.map(c=>Math.max(0,c.conv)).sort((a,b)=>a-b);
     const cp95=cv[Math.floor(cv.length*0.95)]||1;
+    // Upwelling+ : modula la morfologia con l'allineamento CORRENTE vs pendenza-in-salita (corrente che risale la scarpata -> risalita forzata).
+    const useCur=advOn && meteoMarine && meteoMarine.current && meteoMarine.current.spd>0;
+    let cUx=0,cUy=0; if(useCur){ const cd=(meteoMarine.current.dir||0)*Math.PI/180; cUx=Math.sin(cd); cUy=Math.cos(cd); }   // versore corrente (verso cui scorre): E=sin, N=cos
     cells.forEach(c=>{ const s=Math.min(1,c.slope/(p95||1)), k=Math.min(1,Math.max(0,c.conv)/(cp95||1));
-      c.score=0.75*s+0.25*k; });
+      const topo=0.75*s+0.25*k;
+      if(useCur){ const gm=Math.hypot(c.dzdx,c.dzdy)||1e-9; c.align=Math.max(0,(cUx*c.dzdx+cUy*c.dzdy)/gm); c.score=topo*(0.2+0.8*c.align); }
+      else c.score=topo; });
     const sc=cells.map(c=>c.score).sort((a,b)=>a-b);
     const thr=sc[Math.floor(sc.length*0.88)]||0.5;
     let hi=cells.filter(c=>c.score>=thr).sort((a,b)=>b.score-a.score);
@@ -666,9 +697,9 @@ try {
     const zr=cur3d?cur3d.zRangeM:1000, off=Math.max(20,zr*0.012);
     const x=[],y=[],z=[],col=[],txt=[];
     hi.forEach(c=>{ x.push(lons[c.j]); y.push(lats[c.i]); z.push(zz[c.i][c.j]+off); col.push(c.score);
-      txt.push('pot. upwelling '+Math.round(c.score*100)+'% &middot; fondo '+Math.abs(Math.round(zz[c.i][c.j]))+' m'); });
+      txt.push('pot. upwelling '+Math.round(c.score*100)+'% &middot; fondo '+Math.abs(Math.round(zz[c.i][c.j]))+' m'+(useCur?' &middot; corrente-in-salita '+Math.round((c.align||0)*100)+'%':'')); });
     window.MLP.upwellCount=x.length;
-    return [{type:'scatter3d',mode:'markers',x:x,y:y,z:z,name:'upwelling (euristica)',
+    return [{type:'scatter3d',mode:'markers',x:x,y:y,z:z,name:(useCur?'upwelling (corrente)':'upwelling (euristica)'),
       marker:{size:3.5,color:col,colorscale:[[0,'rgba(255,214,74,0.4)'],[0.5,'rgba(255,140,26,0.85)'],[1,'rgba(255,45,45,1)']],cmin:thr,cmax:1,showscale:false},
       hovertext:txt,hoverinfo:'text'}];
   }
@@ -1174,6 +1205,14 @@ try {
   // Task 3: switch euristica upwelling (evidenzia scarpate ripide + banchi/dorsali del fondale).
   $('upwellOn').onchange=()=>{ render3DScene();
     if($('upwellOn').checked) readout3dHint('Upwelling (euristica): in rosso/arancio le scarpate ripide e i banchi del fondale &middot; zone di probabile risalita e aggregazione'); };
+  // Upwelling+ : morfologia modulata dalla corrente reale (Open-Meteo) all'ora scelta
+  $('upwellAdvOn').onchange=()=>{ $('rowUpwellAdv').style.display=$('upwellAdvOn').checked?'flex':'none';
+    if($('upwellAdvOn').checked){
+      if(!$('upwellDateTime').value){ const d=new Date(),pad=n=>String(n).padStart(2,'0'); $('upwellDateTime').value=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':00'; }
+      readout3dHint('Upwelling+: la morfologia e\' modulata dalla CORRENTE reale (dove la corrente risale la scarpata). Scegli data/ora.');
+      fetchMeteoMarine();
+    } else { meteoMarine=null; render3DScene(); } };
+  $('upwellDateTime').onchange=()=>{ if($('upwellAdvOn').checked) fetchMeteoMarine(); };
   // Switch stile fondale: 'classic' (2 superfici mare/terra) <-> 'rotta' (superficie topografica unica con isolinee).
   // Ridisegna la stessa griglia gia' scaricata (nessun re-download).
   $('styleRotta').onchange=()=>{ seabedStyle=$('styleRotta').checked?'rotta':'classic';

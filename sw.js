@@ -1,7 +1,7 @@
 // MareNav3D - service worker: precache app (offline); cache-first per CDN (MapLibre GL / pmtiles / Protomaps basemaps / Plotly / geotiff)
 // v3: HTML network-first (app sempre aggiornata online), CDN/icone cache-first; rotte/tracce/catture in localStorage
 // NB: i .pmtiles e le richieste Range passano diretti alla rete (vedi fetch handler) - non vanno in cache
-const CACHE = 'marenav3d-v45';
+const CACHE = 'marenav3d-v46';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'
 ];
@@ -16,7 +16,9 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   const req = e.request;
   // MAI in cache: richieste Range (rompono i lettori a range, es. PMTiles) e i file .pmtiles -> passano diretti alla rete
-  if (req.headers.has('range') || new URL(req.url).pathname.endsWith('.pmtiles')) return;
+  // Open-Meteo (meteo-mare/vento per Upwelling+): dati che cambiano nel tempo -> sempre rete diretta, mai cache stantia
+  const _h = new URL(req.url).hostname;
+  if (req.headers.has('range') || new URL(req.url).pathname.endsWith('.pmtiles') || _h.endsWith('open-meteo.com')) return;
   // cacheabile solo se risposta valida e NON opaca (no 4xx/5xx/opache stale in eterno)
   const cacheable = resp => resp && resp.ok && resp.type !== 'opaque';
   const isHTML = req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html');

@@ -188,6 +188,7 @@
         <label title="Linee isobate: curve di livello a profondità costante sul fondale (intervallo regolabile)"><input type="checkbox" id="isoLinesOn"> Isobate</label>
         <label title="Area, profondità min/media/max, pendenza, fasce"><input type="checkbox" id="statsOn"> Statistiche</label>
         <label title="Piani di riferimento a profondità regolabile"><input type="checkbox" id="planesOn"> Piani prof.</label>
+        <label title="Waypoint storici di pesca reali (Ischia/Forio): catture pelagici (tonno/alalunga/spada) + mark GPS"><input type="checkbox" id="catchOn"> Catture</label>
       </div>
       <div class="ctlRow ctlSub" id="rowIso" style="display:none"><span>fascia</span><input id="isobandFrom" type="number" value="80" min="0" step="10">&ndash;<input id="isobandTo" type="number" value="120" min="0" step="10"> m</div>
       <div class="ctlRow ctlSub" id="rowIsoLines" style="display:none"><span>isobate ogni</span><input id="isoStep" type="number" value="100" min="10" step="10"> m</div>
@@ -985,8 +986,49 @@ try {
     return [{type:'scatter3d',mode:'markers',x:x,y:y,z:z,name:'isobata '+from+'-'+to+' m',
       marker:{size:2.7,color:'#8dff3a',opacity:0.85},hovertemplate:'fascia <b>'+from+'&ndash;'+to+' m</b><extra></extra>'}];
   }
+  // CATTURE STORICHE reali (Ischia/Forio) - fonte: D:/Dev/Forio_2026/_catch_campo.js. la=lat, lo=lon, sp=specie, nm=nome/data.
+  const CATCH_ISCHIA=[
+    {la:40.60206,lo:13.67960,sp:"mark",nm:"8 BELL 1350"},{la:40.57027,lo:13.59220,sp:"foraggio",nm:"Foraggio"},{la:40.53075,lo:13.59761,sp:"mark",nm:"Rott 230617"},
+    {la:40.48970,lo:13.61045,sp:"mark",nm:"Waypoint 351"},{la:40.57335,lo:13.61848,sp:"mark",nm:"Waypoint 352"},{la:40.61445,lo:13.62821,sp:"mark",nm:"Waypoint 353"},
+    {la:40.71244,lo:13.61057,sp:"mark",nm:"Waypoint 354"},{la:40.54412,lo:13.60287,sp:"mark",nm:"Waypoint 355"},{la:40.56793,lo:13.61747,sp:"mark",nm:"Waypoint 356"},
+    {la:40.60409,lo:13.64949,sp:"mark",nm:"Waypoint 357"},{la:40.53979,lo:13.58909,sp:"mark",nm:"Waypoint 358"},{la:40.55309,lo:13.57572,sp:"mark",nm:"Waypoint 359"},
+    {la:40.60687,lo:13.62598,sp:"mark",nm:"Waypoint 360"},{la:40.51598,lo:13.62355,sp:"mark",nm:"Waypoint 361"},{la:40.58524,lo:13.59396,sp:"mark",nm:"Waypoint 362"},
+    {la:40.54652,lo:13.61544,sp:"mark",nm:"Waypoint 364"},{la:40.58624,lo:13.59700,sp:"mark",nm:"Waypoint 365"},{la:40.55657,lo:13.68090,sp:"mark",nm:"Waypoint 367"},
+    {la:40.53210,lo:13.62798,sp:"mark",nm:"Waypoint 368"},{la:40.53449,lo:13.59905,sp:"mark",nm:"Waypoint 473"},{la:40.59385,lo:13.58948,sp:"mark",nm:"Waypoint 488"},
+    {la:40.58657,lo:13.59633,sp:"alalunga",nm:"ALA 150619 13:00"},{la:40.58622,lo:13.59507,sp:"tonno",nm:"TS 150619 14:00"},{la:40.58377,lo:13.61522,sp:"alalunga",nm:"ALA 150619 15:50"},
+    {la:40.53933,lo:13.60213,sp:"alalunga",nm:"ALA 150619 17:25"},{la:40.59446,lo:13.63411,sp:"alalunga",nm:"ALA 160619 07:10"},{la:40.60427,lo:13.51230,sp:"spada",nm:"AVV SP 160619 08"},
+    {la:40.53383,lo:13.60211,sp:"alalunga",nm:"ALA 260619 1600"},{la:40.61875,lo:13.65275,sp:"mark",nm:"STK"},{la:40.60237,lo:13.70463,sp:"mark",nm:"32 STK QUARTA"},
+    {la:40.61272,lo:13.70706,sp:"mark",nm:"32 QUARTA"},{la:40.56034,lo:13.69734,sp:"mark",nm:"28 STR 1030"},{la:40.59573,lo:13.69014,sp:"mark",nm:"5 GINO"},
+    {la:40.60407,lo:13.71298,sp:"mark",nm:"2 BOTT 1045"},{la:40.62384,lo:13.62853,sp:"mark",nm:"39 CAT  1043"},{la:40.60902,lo:13.70615,sp:"mark",nm:"39 PISACANE 1120"},
+    {la:40.57361,lo:13.62714,sp:"mark",nm:"19 CAT 1125"},{la:40.60902,lo:13.66339,sp:"mark",nm:"18 CAT 1130"},{la:40.62292,lo:13.60137,sp:"mark",nm:"40 CAT 1140"},
+    {la:40.59191,lo:13.59334,sp:"mark",nm:"37 CAT 1145"},{la:40.59379,lo:13.59061,sp:"mark",nm:"Waypoint 487"},{la:40.62353,lo:13.54543,sp:"mark",nm:"Waypoint 489"},
+    {la:40.58337,lo:13.70473,sp:"mark",nm:"16 AG 1155"},{la:40.62014,lo:13.63704,sp:"mark",nm:"29 TRIST 1205"},{la:40.59326,lo:13.53692,sp:"mark",nm:"7 PUCCI 1207"},
+    {la:40.58584,lo:13.70838,sp:"mark",nm:"43 STR 1250"},{la:40.62411,lo:13.68948,sp:"mark",nm:"47 1500"},{la:40.56293,lo:13.69394,sp:"mark",nm:"40 DSTR 1623"},
+    {la:40.60838,lo:13.70399,sp:"mark",nm:"30 Str 1130"},{la:40.59989,lo:13.68616,sp:"mark",nm:"26 Str 1630"},{la:40.56295,lo:13.61968,sp:"mark",nm:"9 Str 1635"},
+    {la:40.59350,lo:13.72085,sp:"mark",nm:"Waypoint 369"},{la:40.58052,lo:13.57047,sp:"mark",nm:"Waypoint 370"},{la:40.58175,lo:13.57188,sp:"mark",nm:"Waypoint 371"},
+    {la:40.58330,lo:13.58729,sp:"mark",nm:"Waypoint 372"},{la:40.57959,lo:13.59053,sp:"mark",nm:"Waypoint 373"},{la:40.57959,lo:13.61120,sp:"mark",nm:"Waypoint 374"},
+    {la:40.55641,lo:13.62701,sp:"mark",nm:"Waypoint 375"},{la:40.59357,lo:13.76595,sp:"mark",nm:"Waypoint 376"},{la:40.56158,lo:13.58415,sp:"mark",nm:"Waypoint 377"},
+    {la:40.57874,lo:13.54341,sp:"mark",nm:"Waypoint 378"},{la:40.63605,lo:13.64333,sp:"mark",nm:"Waypoint 379"},{la:40.61422,lo:13.44778,sp:"alalunga",nm:"Ala 240617"},
+    {la:40.61149,lo:13.45362,sp:"alalunga",nm:"Ala2 240617"},{la:40.61561,lo:13.64140,sp:"mark",nm:"24 STR 1110"},{la:40.57782,lo:13.62870,sp:"mark",nm:"Fossa1"},
+    {la:40.62769,lo:13.63621,sp:"mark",nm:"DoppioStr 090619"},{la:40.58745,lo:13.59274,sp:"alalunga",nm:"ALA 090619 9:40"},{la:40.53072,lo:13.66408,sp:"mark",nm:"ST1"},
+    {la:40.67357,lo:13.61802,sp:"mark",nm:"V19-2"},{la:40.62748,lo:13.58514,sp:"tonno",nm:"Tonno Monel 1"}
+  ];
+  // Layer catture: marker per specie drappeggiati sul fondale, solo i punti dentro la zona 3D corrente.
+  function catchTraces(){
+    if(!$('catchOn') || !$('catchOn').checked || !lastGrid) return [];
+    const g=lastGrid, bb=g.bb, off=Math.max(15,(cur3d?cur3d.zRangeM:1000)*0.015);
+    const COL={tonno:'#ff2d2d',alalunga:'#ff9a1f',spada:'#ff5bd0',foraggio:'#8cff3b',mark:'#b8c6d6'};
+    const SZ={tonno:6,alalunga:6,spada:6,foraggio:5,mark:2.6};
+    const x=[],y=[],z=[],col=[],sz=[],txt=[];
+    CATCH_ISCHIA.forEach(c=>{ if(c.lo<bb.lonW||c.lo>bb.lonE||c.la<bb.latS||c.la>bb.latN) return;
+      const d=gridDepth(g,c.la,c.lo); if(d==null) return;
+      x.push(c.lo); y.push(c.la); z.push(d+off); col.push(COL[c.sp]||'#b8c6d6'); sz.push(SZ[c.sp]||3);
+      txt.push((c.sp==='mark'?'mark':c.sp.toUpperCase())+': '+c.nm+' &middot; fondo '+Math.abs(Math.round(d))+' m'); });
+    if(!x.length) return [];
+    return [{type:'scatter3d',mode:'markers',x:x,y:y,z:z,name:'catture storiche',marker:{size:sz,color:col,line:{color:'#06121f',width:0.5}},hovertext:txt,hoverinfo:'text'}];
+  }
   function render3DScene(){ if(!cur3d) return; const lc=liveCamera(); if(lc) cur3d.layout.scene.camera=lc;   // preserva la vista corrente
-    Plotly.react('zone',[...cur3d.base,...seaLevelTrace(),...boat3dTraces(),...section3dTraces(),...isobandTraces(),...upwellTraces(),...currentTraces(),...routesTraces(),...buildPlanes()],cur3d.layout,{displayModeBar:false,responsive:true,doubleClick:false}); }
+    Plotly.react('zone',[...cur3d.base,...seaLevelTrace(),...boat3dTraces(),...section3dTraces(),...isobandTraces(),...upwellTraces(),...currentTraces(),...routesTraces(),...catchTraces(),...buildPlanes()],cur3d.layout,{displayModeBar:false,responsive:true,doubleClick:false}); }
   // La Sezione vive nel grafico 2D (showSectionProfile), NON nel modello 3D: qualsiasi modifica alla scena
   // gl3d ri-renderizza l'intera superficie densa (centinaia di migliaia di vertici) e blocca le GPU deboli.
   // Ombreggiatura rilievo (hillshade): luce radente regolabile per azimut del sole -> scarpate/canyon in risalto.
@@ -1258,7 +1300,7 @@ try {
     const surfIdx = useTopo ? [0] : [0,1];
     cur3d={ base:base, surfIdx:surfIdx, layout:layout, bb:g.bb, maxD:maxD, zRangeM:zRangeM, mD:mD, zmin:zmin, zmax:zmax,
             eye0:{x:veEye.x,y:veEye.y,z:veEye.z}, d0:Math.hypot(veEye.x,veEye.y,veEye.z) };   // camera default + distanza iniziale (per clamp zoom e reset)
-    await Plotly.newPlot('zone',[...cur3d.base,...seaLevelTrace(),...boat3dTraces(),...section3dTraces(),...isobandTraces(),...upwellTraces(),...currentTraces(),...routesTraces(),...buildPlanes()],layout,{displayModeBar:false,responsive:true,doubleClick:false});
+    await Plotly.newPlot('zone',[...cur3d.base,...seaLevelTrace(),...boat3dTraces(),...section3dTraces(),...isobandTraces(),...upwellTraces(),...currentTraces(),...routesTraces(),...catchTraces(),...buildPlanes()],layout,{displayModeBar:false,responsive:true,doubleClick:false});
     $('zone3dov').style.display='none';   // overlay gl3d sovrapposto disattivato (non renderizzava su GPU reali) -> Sezione usa overlay 2D SVG
     if($('shadeOn')&&$('shadeOn').checked) applyShading();   // ri-applica l'hillshade sulla scena appena (ri)costruita
     if($('isoLinesOn')&&$('isoLinesOn').checked) applyIsoLines();   // ri-applica le linee isobate
@@ -1399,6 +1441,7 @@ try {
     render3DScene();
   };
   $('routesOn').onchange=()=>render3DScene();
+  $('catchOn').onchange=()=>render3DScene();
   // Switch stile fondale: 'classic' (2 superfici mare/terra) <-> 'rotta' (superficie topografica unica con isolinee).
   // Ridisegna la stessa griglia gia' scaricata (nessun re-download).
   $('styleRotta').onchange=()=>{ seabedStyle=$('styleRotta').checked?'rotta':'classic';

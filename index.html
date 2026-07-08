@@ -1518,6 +1518,19 @@ try {
   window.MLP.removeCurtains=removeCurtains;   // hook per test de-curtain bordi
   window.MLP.setSection=(aLon,aLat,bLon,bLat)=>{ section3d={a:{lon:aLon,lat:aLat},b:{lon:bLon,lat:bLat}}; showSectionProfile(); drawSectionOnMap(); };   // hook test sezione (overlay 2D)
   window.MLP.setMeteo=(cSpd,cDir,wSpd,wDir)=>{ meteoMarine=(cSpd==null?null:{current:{spd:cSpd,dir:cDir},wind:(wSpd==null?null:{spd:wSpd,dir:wDir}),time:'test'}); if($('upwellAdvOn'))$('upwellAdvOn').checked=true; render3DScene(); };   // hook test upwelling fisico (inietta corrente sintetica)
+  window.MLP.morphAt=(lat,lon)=>{   // hook validazione: pendenza/convessita'/profondita' alla cella piu' vicina (stessa formula di upwellTraces)
+    const g=lastGrid; if(!g) return null;
+    let bi=0,bj=0,bd=1e9; for(let i=0;i<g.rows;i++){ const dd=Math.abs(g.lats[i]-lat); if(dd<bd){bd=dd;bi=i;} }
+    bd=1e9; for(let j=0;j<g.cols;j++){ const dd=Math.abs(g.lons[j]-lon); if(dd<bd){bd=dd;bj=j;} }
+    if(bi<1||bi>g.rows-2||bj<1||bj>g.cols-2) return null;
+    const v=g.zz[bi][bj], l=g.zz[bi][bj-1], r=g.zz[bi][bj+1], u=g.zz[bi-1][bj], d=g.zz[bi+1][bj];
+    if(v==null||l==null||r==null||u==null||d==null||v>0) return null;
+    const cLat=(g.bb.latS+g.bb.latN)/2*Math.PI/180;
+    const cellMx=Math.max(5,((g.bb.lonE-g.bb.lonW)/(g.cols-1))*111320*Math.cos(cLat));
+    const cellMy=Math.max(5,((g.bb.latN-g.bb.latS)/(g.rows-1))*110574);
+    const dzdx=(r-l)/(2*cellMx), dzdy=(u-d)/(2*cellMy);
+    return {depth:v, slope:Math.sqrt(dzdx*dzdx+dzdy*dzdy), conv:v-(l+r+u+d)/4};
+  };
 
   window.MLP.setMode=setMode; window.MLP.getRuler=()=>rulerPts; window.MLP.getRoute=()=>routePts; window.MLP.gpsOn=()=>watchId!=null;
 

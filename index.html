@@ -1140,7 +1140,7 @@ try {
     // gestiti dalla checkbox #wallsOn (default nascosti). Il pavimento (piano x-y, zaxis) resta sempre spento: inutile.
     const showWalls=$('wallsOn').checked;
     const layout={paper_bgcolor:'#06121f',margin:{l:0,r:0,t:0,b:0},showlegend:false,
-      scene:{aspectmode:'manual',aspectratio:{x:aspX,y:aspY,z:aspZ},camera:(keepCam||{eye:veEye}),dragmode:(dragPan?'pan':'turntable'),
+      scene:{aspectmode:'manual',uirevision:(g.bb.latS.toFixed(3)+'_'+g.bb.lonW.toFixed(3)+'_'+g.bb.latN.toFixed(3)+'_'+g.bb.lonE.toFixed(3)),aspectratio:{x:aspX,y:aspY,z:aspZ},camera:(keepCam||{eye:veEye}),dragmode:(dragPan?'pan':'turntable'),
         xaxis:sideAxis(showWalls),
         yaxis:sideAxis(showWalls),
         zaxis: useTopo ? {visible:true,title:{text:'quota m'},color:'#8fb0cc',gridcolor:'#153049',zerolinecolor:'#2c6b8a',showbackground:false}

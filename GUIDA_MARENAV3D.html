@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guida MareNav3D — come usare l'app</title>
+<style>
+  :root{ --bg:#06121f; --panel:#0d2137; --line:#1c3556; --txt:#dfeaf5; --dim:#8fb0cc; --accent:#22e0ff; --hot:#ff9a1f; }
+  *{box-sizing:border-box}
+  body{ margin:0; background:linear-gradient(#06121f,#0a1a2c); color:var(--txt);
+    font:15px/1.6 system-ui,Segoe UI,Roboto,sans-serif; }
+  header{ padding:28px 20px 20px; text-align:center; border-bottom:1px solid var(--line);
+    background:#08192b; }
+  header h1{ margin:0 0 6px; font-size:26px; letter-spacing:.3px; }
+  header p{ margin:0; color:var(--dim); }
+  main{ max-width:900px; margin:0 auto; padding:22px 18px 60px; }
+  h2{ font-size:20px; margin:34px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--line); }
+  h3{ font-size:16px; margin:20px 0 6px; color:#bfe0ff; }
+  figure{ margin:14px 0; }
+  figure img{ width:100%; border:1px solid var(--line); border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.4); }
+  figcaption{ color:var(--dim); font-size:13px; margin-top:6px; text-align:center; }
+  .card{ background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin:12px 0; }
+  .chip{ display:inline-block; background:#12304f; border:1px solid var(--line); border-radius:6px;
+    padding:1px 7px; font-size:13px; color:#cfe6ff; white-space:nowrap; }
+  .steps{ counter-reset:s; list-style:none; padding-left:0; }
+  .steps li{ position:relative; padding:6px 0 6px 40px; border-bottom:1px dashed var(--line); }
+  .steps li:before{ counter-increment:s; content:counter(s); position:absolute; left:0; top:6px;
+    width:26px; height:26px; border-radius:50%; background:var(--accent); color:#04202b;
+    font-weight:700; display:flex; align-items:center; justify-content:center; }
+  .honest{ background:#2a1c0d; border:1px solid #6c4a1c; }
+  .honest h2{ border-color:#6c4a1c; color:#ffcf85; }
+  table{ width:100%; border-collapse:collapse; margin:10px 0; font-size:14px; }
+  th,td{ border:1px solid var(--line); padding:7px 9px; text-align:left; }
+  th{ background:#12304f; }
+  code{ background:#0a1c30; border:1px solid var(--line); border-radius:4px; padding:1px 5px; font-size:13px; }
+  .legend span{ display:inline-flex; align-items:center; gap:6px; margin:2px 12px 2px 0; }
+  .dot{ width:12px; height:12px; border-radius:50%; display:inline-block; border:1px solid #08111f; }
+  footer{ text-align:center; color:var(--dim); font-size:12px; padding:20px; border-top:1px solid var(--line); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🌊 MareNav3D — Guida all'uso</h1>
+  <p>Carta nautica con batimetria e fondale 3D · funziona offline (PWA) · <span class="chip">marinovinc.github.io/MareNav3D</span></p>
+</header>
+<main>
+
+  <div class="card">
+    <b>Cos'è.</b> MareNav3D disegna il <b>fondale del mare in 3D</b> usando la batimetria satellitare
+    (EMODnet) e ti dà strumenti per la pesca: sezioni del fondale, evidenziazione di scarpate e banchi
+    (upwelling), correnti reali, rotte del giorno e i tuoi waypoint di cattura. Tutti i dati arrivano da
+    servizi aperti direttamente sul telefono/PC — nessun account, nessun server.
+  </div>
+
+  <h2>1 · Aprire una zona in 3D</h2>
+  <p>All'avvio vedi la <b>carta 2D</b>. Per studiare il fondale in 3D:</p>
+  <ol class="steps">
+    <li>Inquadra la zona di mare che ti interessa (pizzica per zoomare / trascina per spostarti).</li>
+    <li>Tocca/traccia l'<b>area</b> sulla carta: l'app scarica la batimetria e apre la scena 3D.</li>
+    <li>Nel 3D: <b>trascina</b> per ruotare, <b>rotellina/pizzica</b> per zoomare. Il pulsante
+      <span class="chip">← Carta</span> in alto a sinistra torna alla mappa 2D.</li>
+  </ol>
+  <figure>
+    <img src="guida_01_mappa.png" alt="Carta 2D iniziale">
+    <figcaption>La carta 2D di partenza: inquadra la zona e aprila in 3D.</figcaption>
+  </figure>
+
+  <h2>2 · La scena 3D e il pannello controlli</h2>
+  <p>A destra c'è il pannello <b>CONTROLLI 3D</b>, diviso in <b>Vista</b>, <b>Grafica rilievo</b> e
+    <b>Strumenti</b>. In basso a destra: <span class="chip">Dettaglio</span> (risoluzione),
+    <span class="chip">↩ Vista</span> (rimette la vista utile), <span class="chip">Sposta</span>,
+    <span class="chip">PNG</span> (salva immagine) e lo zoom <span class="chip">+ / −</span>.
+    La bussola N/S/E/W è a sinistra. Muovendo il puntatore sul fondale leggi la <b>profondità</b>.</p>
+  <figure>
+    <img src="guida_02_fondo3d.png" alt="Scena 3D del fondale con pannello controlli">
+    <figcaption>Scena 3D del fondale + pannello CONTROLLI 3D con tutti gli strumenti.</figcaption>
+  </figure>
+
+  <h3>Vista &amp; Grafica rilievo</h3>
+  <ul>
+    <li><span class="chip">Topografico</span> — superficie unica con isolinee (stile carta topografica).</li>
+    <li><span class="chip">Livello mare</span> · <span class="chip">Pareti box</span> · <span class="chip">Piani prof.</span> — piani di riferimento.</li>
+    <li><span class="chip">Rilievo</span> (slider) — esagera la profondità per vedere meglio le scarpate.</li>
+    <li><span class="chip">Ombreggiatura</span> — luce/contrasto/direzione per far risaltare il rilievo.</li>
+    <li><span class="chip">Isobate</span> — curve di livello a profondità costante (intervallo regolabile).</li>
+    <li><span class="chip">Fascia</span> — evidenzia una fascia di profondità scelta (es. 80–120 m).</li>
+    <li><span class="chip">Statistiche</span> — area, profondità min/media/max, pendenza.</li>
+  </ul>
+
+  <h2>3 · Sezione batimetrica</h2>
+  <p>Attiva <span class="chip">Sezione</span> e tocca <b>due punti</b> (A e B) sul fondale: ottieni il
+    <b>profilo verticale</b> del fondale tra i due (distanza in miglia × profondità). Dopo aver messo B,
+    i clic successivi non spostano più A. Il pulsante <span class="chip">↩ Vista sezione</span> riallinea
+    la vista se hai ruotato.</p>
+
+  <h2>4 · Upwelling e Upwelling+ (con correnti reali)</h2>
+  <p>Due strumenti per trovare le <b>risalite d'acqua</b> sul rilievo:</p>
+  <ul>
+    <li><span class="chip">Upwelling</span> — <b>solo morfologia</b>: evidenzia scarpate ripide e banchi
+      (indicatore statico, non dipende dal tempo).</li>
+    <li><span class="chip">Upwelling+</span> — <b>fisico</b>: usa la <b>corrente reale</b> (Open-Meteo)
+      all'ora scelta e calcola la risalita al fondo <code>w = u·∇h</code> (la corrente che risale la
+      scarpata forza acqua verso l'alto).</li>
+  </ul>
+  <h3>Come usare Upwelling+</h3>
+  <ol class="steps">
+    <li>Attiva <span class="chip">Upwelling+</span>: compare la riga con <b>data/ora</b> (default oggi 12:00)
+      e si accendono le <b>frecce ciano della corrente</b>.</li>
+    <li>Premi <span class="chip">+1h ▶</span> per avanzare di un'ora: i punti della nuova ora appaiono in un
+      <b>colore diverso</b> e quelli dell'ora prima restano come <b>scia</b> → vedi l'upwelling spostarsi.</li>
+    <li><span class="chip">✖ scie</span> pulisce le tracce; <span class="chip">corrente</span> mostra/nasconde le frecce.</li>
+  </ol>
+  <p>La <b>dimensione</b> del punto indica l'intensità della risalita; il <b>colore</b> indica l'ora.</p>
+  <figure>
+    <img src="guida_03_upwelling.png" alt="Upwelling+ con scie colorate e correnti">
+    <figcaption>Upwelling+: punti di risalita colorati per ora, frecce ciano della corrente reale.</figcaption>
+  </figure>
+
+  <h2>5 · Rotte del giorno</h2>
+  <p>Con Upwelling+ attivo, premi <span class="chip">⚓ rotte</span>: l'app calcola l'upwelling di
+    <b>tutte le 24 ore</b> del giorno e disegna due percorsi:</p>
+  <ul>
+    <li><b>Rotta hotspot persistenti</b> (linea bianca + punti rossi) — collega le zone che risalgono più a
+      lungo e più forte (persistenza ≥70%, solo le 8 zone migliori).</li>
+    <li><b>Fronte</b> (anello ciano) — il perimetro della zona produttiva, da trollare sul bordo.</li>
+  </ul>
+  <p>La checkbox <span class="chip">mostra</span> accende/spegne le rotte; se cambi zona, ri-checkala per
+    ricalcolarle.</p>
+  <figure>
+    <img src="guida_04_rotte.png" alt="Rotte del giorno: hotspot persistenti e fronti">
+    <figcaption>Rotta bianca sugli hotspot persistenti + anelli ciano dei fronti, sopra le frecce di corrente.</figcaption>
+  </figure>
+
+  <h2>6 · Catture reali (Ischia/Forio)</h2>
+  <p>Attiva <span class="chip">Catture</span> per sovrapporre i <b>waypoint storici di pesca</b> reali
+    (zona Ischia/Forio), colorati per specie. Tocca un punto per nome e profondità.</p>
+  <p class="legend">
+    <span><i class="dot" style="background:#ff2d2d"></i> tonno</span>
+    <span><i class="dot" style="background:#ff9a1f"></i> alalunga</span>
+    <span><i class="dot" style="background:#ff1493"></i> spada</span>
+    <span><i class="dot" style="background:#19e36a"></i> foraggio</span>
+    <span><i class="dot" style="background:#b8c6d6"></i> mark GPS</span>
+  </p>
+  <figure>
+    <img src="guida_05_catture.png" alt="Overlay catture reali sul fondale 3D">
+    <figcaption>I waypoint reali di cattura drappeggiati sul fondale, colorati per specie.</figcaption>
+  </figure>
+
+  <h2>7 · Barca ed ecoscandaglio</h2>
+  <ul>
+    <li><span class="chip">Barca</span> — tocca il fondale per posizionare la barca (con eco).</li>
+    <li><span class="chip">Barca GPS</span> — la scena segue la tua posizione GPS reale.</li>
+  </ul>
+
+  <div class="card honest">
+    <h2 style="margin-top:0">⚠️ Onestà: cosa significano (e non significano) questi indicatori</h2>
+    <p>L'upwelling e le rotte sono <b>indicatori euristici basati su fisica di primo ordine</b>, non un
+      modello oceanografico validato. In particolare, confrontando le previsioni con le <b>catture reali</b>
+      (alalunga/tonno) è emerso onestamente che:</p>
+    <table>
+      <tr><th>Indicatore</th><th>Predice le catture pelagiche?</th></tr>
+      <tr><td>Upwelling di <b>fondo</b> (topografia)</td><td>No — le catture sono su ~1000 m, la risalita al fondo non affiora</td></tr>
+      <tr><td>Fronte termico <b>SST</b></td><td>No (alla risoluzione dei dati aperti ~1–6 km)</td></tr>
+      <tr><td>Convergenze <b>SSHA</b></td><td>No</td></tr>
+    </table>
+    <p>Conclusione onesta: per la <b>traina pelagica in altura</b> i dati satellitari aperti a scala km
+      <b>non</b> spiegano gli spot; contano fronti sub-mesoscala (&lt;1 km) e la <b>conoscenza locale</b>
+      (i tuoi mark valgono più dei modelli). L'upwelling di fondo resta invece <b>fisicamente pertinente per
+      il pesce di fondo / bolentino</b> su strutture basse. Usa questi strumenti come <b>scouting</b>, non
+      come garanzia.</p>
+  </div>
+
+  <h2>8 · Trucchi</h2>
+  <ul>
+    <li><b>Installabile</b>: è una PWA — "Aggiungi a schermata Home" per usarla come app, anche <b>offline</b>.</li>
+    <li>Se dopo un aggiornamento non vedi le novità: ricarica forzata <code>Ctrl+Shift+R</code> (PC) o svuota
+      la cache del sito (telefono).</li>
+    <li><span class="chip">PNG</span> salva l'immagine della scena 3D corrente.</li>
+  </ul>
+
+</main>
+<footer>
+  MareNav3D — guida generata il 08/07/2026 · dati: EMODnet Bathymetry, Open-Meteo, Copernicus Marine ·
+  app client-only, nessun dato inviato a server.
+</footer>
+</body>
+</html>

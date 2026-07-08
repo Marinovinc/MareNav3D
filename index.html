@@ -683,23 +683,37 @@ try {
     const p95=sl[Math.floor(sl.length*0.95)]||sl[sl.length-1]||1;
     const cv=cells.map(c=>Math.max(0,c.conv)).sort((a,b)=>a-b);
     const cp95=cv[Math.floor(cv.length*0.95)]||1;
-    // Upwelling+ : modula la morfologia con l'allineamento CORRENTE vs pendenza-in-salita (corrente che risale la scarpata -> risalita forzata).
     const useCur=advOn && meteoMarine && meteoMarine.current && meteoMarine.current.spd>0;
-    let cUx=0,cUy=0; if(useCur){ const cd=(meteoMarine.current.dir||0)*Math.PI/180; cUx=Math.sin(cd); cUy=Math.cos(cd); }   // versore corrente (verso cui scorre): E=sin, N=cos
-    cells.forEach(c=>{ const s=Math.min(1,c.slope/(p95||1)), k=Math.min(1,Math.max(0,c.conv)/(cp95||1));
-      const topo=0.75*s+0.25*k;
-      if(useCur){ const gm=Math.hypot(c.dzdx,c.dzdy)||1e-9; c.align=Math.max(0,(cUx*c.dzdx+cUy*c.dzdy)/gm); c.score=topo*(0.2+0.8*c.align); }
-      else c.score=topo; });
+    const zr=cur3d?cur3d.zRangeM:1000, off=Math.max(20,zr*0.012), CAP=1400;
+    const x=[],y=[],z=[],col=[],txt=[];
+    if(useCur){
+      // Upwelling+ FISICO: velocita' verticale al fondo w = u . grad(z) (condizione al contorno di fondo: il flusso segue
+      // la batimetria). z = quota fondale (negativa, m); corrente [m/s] che risale la scarpata (verso il meno profondo) -> w>0 = risalita.
+      // dir Open-Meteo = "verso cui scorre" (0deg=N, 90deg=E) -> versore (sin,cos). Verificato su docs marine-weather-api.
+      const cd=(meteoMarine.current.dir||0)*Math.PI/180, cUx=Math.sin(cd), cUy=Math.cos(cd), u_ms=meteoMarine.current.spd/3.6;
+      cells.forEach(c=>{ c.w=u_ms*(cUx*c.dzdx+cUy*c.dzdy); });   // m/s (>0 upwelling, <0 downwelling)
+      let up=cells.filter(c=>c.w>0);
+      if(!up.length){ window.MLP.upwellCount=0; return []; }   // corrente non forza risalita da nessuna cella
+      const wv=up.map(c=>c.w).sort((a,b)=>a-b);
+      const wp95=wv[Math.floor(wv.length*0.95)]||wv[wv.length-1]||1e-9;
+      up.sort((a,b)=>b.w-a.w); if(up.length>CAP) up=up.slice(0,CAP);
+      up.forEach(c=>{ x.push(lons[c.j]); y.push(lats[c.i]); z.push(zz[c.i][c.j]+off); col.push(Math.min(1,c.w/wp95));
+        txt.push('risalita al fondo <b>'+(c.w*100).toFixed(2)+' cm/s</b> &middot; fondo '+Math.abs(Math.round(zz[c.i][c.j]))+' m'); });
+      window.MLP.upwellCount=x.length; window.MLP.upwellWmax=wp95;
+      return [{type:'scatter3d',mode:'markers',x:x,y:y,z:z,name:'upwelling (w=u·∇h)',
+        marker:{size:3.5,color:col,colorscale:[[0,'rgba(255,214,74,0.4)'],[0.5,'rgba(255,140,26,0.85)'],[1,'rgba(255,45,45,1)']],cmin:0,cmax:1,showscale:false},
+        hovertext:txt,hoverinfo:'text'}];
+    }
+    // Morfologia (base, senza corrente): 0.75*pendenza_norm + 0.25*convessita_norm, top ~12%.
+    cells.forEach(c=>{ const s=Math.min(1,c.slope/(p95||1)), k=Math.min(1,Math.max(0,c.conv)/(cp95||1)); c.score=0.75*s+0.25*k; });
     const sc=cells.map(c=>c.score).sort((a,b)=>a-b);
     const thr=sc[Math.floor(sc.length*0.88)]||0.5;
     let hi=cells.filter(c=>c.score>=thr).sort((a,b)=>b.score-a.score);
-    const CAP=1400; if(hi.length>CAP) hi=hi.slice(0,CAP);
-    const zr=cur3d?cur3d.zRangeM:1000, off=Math.max(20,zr*0.012);
-    const x=[],y=[],z=[],col=[],txt=[];
+    if(hi.length>CAP) hi=hi.slice(0,CAP);
     hi.forEach(c=>{ x.push(lons[c.j]); y.push(lats[c.i]); z.push(zz[c.i][c.j]+off); col.push(c.score);
-      txt.push('pot. upwelling '+Math.round(c.score*100)+'% &middot; fondo '+Math.abs(Math.round(zz[c.i][c.j]))+' m'+(useCur?' &middot; corrente-in-salita '+Math.round((c.align||0)*100)+'%':'')); });
+      txt.push('pot. upwelling '+Math.round(c.score*100)+'% &middot; fondo '+Math.abs(Math.round(zz[c.i][c.j]))+' m'); });
     window.MLP.upwellCount=x.length;
-    return [{type:'scatter3d',mode:'markers',x:x,y:y,z:z,name:(useCur?'upwelling (corrente)':'upwelling (euristica)'),
+    return [{type:'scatter3d',mode:'markers',x:x,y:y,z:z,name:'upwelling (morfologia)',
       marker:{size:3.5,color:col,colorscale:[[0,'rgba(255,214,74,0.4)'],[0.5,'rgba(255,140,26,0.85)'],[1,'rgba(255,45,45,1)']],cmin:thr,cmax:1,showscale:false},
       hovertext:txt,hoverinfo:'text'}];
   }
@@ -1288,6 +1302,7 @@ try {
   window.MLP.getBoat3d=()=>boat3d;
   window.MLP.removeCurtains=removeCurtains;   // hook per test de-curtain bordi
   window.MLP.setSection=(aLon,aLat,bLon,bLat)=>{ section3d={a:{lon:aLon,lat:aLat},b:{lon:bLon,lat:bLat}}; showSectionProfile(); drawSectionOnMap(); };   // hook test sezione (overlay 2D)
+  window.MLP.setMeteo=(cSpd,cDir,wSpd,wDir)=>{ meteoMarine=(cSpd==null?null:{current:{spd:cSpd,dir:cDir},wind:(wSpd==null?null:{spd:wSpd,dir:wDir}),time:'test'}); if($('upwellAdvOn'))$('upwellAdvOn').checked=true; render3DScene(); };   // hook test upwelling fisico (inietta corrente sintetica)
 
   window.MLP.setMode=setMode; window.MLP.getRuler=()=>rulerPts; window.MLP.getRoute=()=>routePts; window.MLP.gpsOn=()=>watchId!=null;
 

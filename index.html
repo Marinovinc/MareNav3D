@@ -822,24 +822,42 @@ try {
       const cd=(dir||0)*Math.PI/180, cUx=Math.sin(cd), cUy=Math.cos(cd), u_ms=spd/3.6;
       geom.forEach(c=>{ const w=u_ms*(cUx*c.dzdx+cUy*c.dzdy); if(w>0){ const k=c.i*cols+c.j; persist.set(k,(persist.get(k)||0)+1); wsum.set(k,(wsum.get(k)||0)+w); } });
     });
-    if(!usedH) return {points:[],edges:[],nH:0};
-    const thrH=Math.max(1,Math.ceil(usedH*0.5));
+    if(!usedH) return {points:[],fronts:[],nH:0};
+    // SEVERO: persistenza >= 70% delle ore utili
+    const persistFrac=0.70, thrH=Math.max(1,Math.ceil(usedH*persistFrac));
     const persistCells=[];
     persist.forEach((cnt,k)=>{ if(cnt>=thrH){ const i=Math.floor(k/cols), j=k%cols; persistCells.push({i,j,cnt,mw:wsum.get(k)/cnt,lat:lats[i],lon:lons[j],z:zz[i][j]}); } });
-    if(!persistCells.length) return {points:[],edges:[],nH:usedH};
-    // ROTTA PUNTI: greedy per (persistenza, w medio) con separazione minima ~1/8 zona
-    persistCells.sort((a,b)=>(b.cnt-a.cnt)||(b.mw-a.mw));
-    const sepDeg=Math.max((g.bb.lonE-g.bb.lonW),(g.bb.latN-g.bb.latS))/8;
-    const way=[];
-    for(const c of persistCells){ if(way.every(p=>Math.hypot(p.lon-c.lon,p.lat-c.lat)>sepDeg)){ way.push(c); if(way.length>=10) break; } }
-    // ordina nearest-neighbor partendo da ovest
-    const pool=way.slice(); const route=[];
+    if(!persistCells.length) return {points:[],fronts:[],nH:usedH,persistFrac};
+    // PRECISO: tieni solo la meta' piu' INTENSA (w medio >= mediana) del set persistente -> via il persistente-ma-debole
+    const mws=persistCells.map(c=>c.mw).sort((a,b)=>a-b); const medMw=mws[Math.floor(mws.length*0.5)]||0;
+    const strong=persistCells.filter(c=>c.mw>=medMw);
+    // CLUSTER: componenti connesse (8-conn); scarta i cluster < 4 celle (rumore isolato)
+    const compsAll=clusters(strong,cols).filter(cp=>cp.length>=4);
+    if(!compsAll.length) return {points:[],fronts:[],nH:usedH,persistFrac};
+    // Tieni solo le MIGLIORI zone: score = forza integrata (somma dei w medi delle celle) -> top 8 cluster
+    const scored=compsAll.map(cp=>({cp, score:cp.reduce((s,c)=>s+c.mw,0), peak:cp.reduce((a,b)=>b.mw>a.mw?b:a)}));
+    scored.sort((a,b)=>b.score-a.score);
+    const top=scored.slice(0,8);
+    // ROTTA: waypoint = PICCO di ogni zona top; ordine nearest-neighbor da ovest
+    const pool=top.map(s=>s.peak), route=[];
     let cur=pool.reduce((a,b)=>b.lon<a.lon?b:a,pool[0]); pool.splice(pool.indexOf(cur),1); route.push(cur);
     while(pool.length){ let nx=pool.reduce((a,b)=>(Math.hypot(b.lon-cur.lon,b.lat-cur.lat)<Math.hypot(a.lon-cur.lon,a.lat-cur.lat))?b:a,pool[0]); pool.splice(pool.indexOf(nx),1); route.push(nx); cur=nx; }
-    // FRONTE = perimetro (convex hull) del nucleo forte-persistente -> rotta ad anello attorno alla zona produttiva.
-    const strong=persistCells.slice().sort((a,b)=>b.mw-a.mw).slice(0,200);
-    const front=convexHull(strong.map(c=>({x:c.lon,y:c.lat,z:c.z})));
-    return {points:route, front, coreN:strong.length, nH:usedH, persistTot:persistCells.length};
+    // FRONTE: un anello (convex hull) per ognuna delle zone top
+    const fronts=top.map(s=>convexHull(s.cp.map(c=>({x:c.lon,y:c.lat,z:c.z})))).filter(h=>h.length>=3);
+    return {points:route, fronts, nH:usedH, persistFrac, clusters:compsAll.length, kept:top.length};
+  }
+  // Componenti connesse (8-conn) su una lista di celle {i,j,...} indicizzate su griglia cols.
+  function clusters(cells, cols){
+    const key=c=>c.i*cols+c.j, map=new Map(); cells.forEach(c=>map.set(key(c),c));
+    const seen=new Set(), out=[];
+    for(const c of cells){ const k0=key(c); if(seen.has(k0)) continue;
+      const comp=[], stack=[c]; seen.add(k0);
+      while(stack.length){ const q=stack.pop(); comp.push(q);
+        for(let di=-1;di<=1;di++)for(let dj=-1;dj<=1;dj++){ if(!di&&!dj) continue;
+          const nk=(q.i+di)*cols+(q.j+dj); if(map.has(nk)&&!seen.has(nk)){ seen.add(nk); stack.push(map.get(nk)); } } }
+      out.push(comp);
+    }
+    return out;
   }
   // Convex hull 2D (monotone chain di Andrew): ordina i punti in un poligono perimetrale.
   function convexHull(pts){
@@ -854,12 +872,12 @@ try {
   function routesTraces(){
     if(!$('routesOn') || !$('routesOn').checked || !dayRoutes || !lastGrid) return [];
     const off=Math.max(20,(cur3d?cur3d.zRangeM:1000)*0.02), tr=[];
-    if(dayRoutes.front && dayRoutes.front.length>=3){ const fx=[],fy=[],fz=[]; dayRoutes.front.forEach(c=>{ fx.push(c.x); fy.push(c.y); fz.push((c.z||0)+off); });
-      fx.push(dayRoutes.front[0].x); fy.push(dayRoutes.front[0].y); fz.push((dayRoutes.front[0].z||0)+off);   // chiudi l'anello
-      tr.push({type:'scatter3d',mode:'lines',x:fx,y:fy,z:fz,name:'fronte (bordo zona produttiva)',line:{color:'#00ffd0',width:4},hovertext:'fronte: perimetro della zona di upwelling persistente (dove i pelagici cacciano)',hoverinfo:'text'}); }
+    if(dayRoutes.fronts && dayRoutes.fronts.length){ dayRoutes.fronts.forEach((h,idx)=>{ if(!h||h.length<3) return; const fx=[],fy=[],fz=[]; h.forEach(c=>{ fx.push(c.x); fy.push(c.y); fz.push((c.z||0)+off); });
+      fx.push(h[0].x); fy.push(h[0].y); fz.push((h[0].z||0)+off);   // chiudi l'anello
+      tr.push({type:'scatter3d',mode:'lines',x:fx,y:fy,z:fz,name:(idx===0?'fronte (bordo zona produttiva)':'fronte '+(idx+1)),showlegend:idx===0,line:{color:'#00ffd0',width:4},hovertext:'fronte: bordo di una zona di upwelling persistente (dove cacciano i pelagici)',hoverinfo:'text'}); }); }
     if(dayRoutes.points && dayRoutes.points.length){ const px=[],py=[],pz=[]; dayRoutes.points.forEach(c=>{ px.push(c.lon); py.push(c.lat); pz.push((c.z||0)+off*1.4); });
       tr.push({type:'scatter3d',mode:'lines+markers',x:px,y:py,z:pz,name:'rotta hotspot persistenti',line:{color:'#ffffff',width:5},marker:{size:5,color:'#ff2d2d'},
-        hovertext:dayRoutes.points.map(c=>'hotspot: upwelling in '+c.cnt+'/'+dayRoutes.nH+' ore &middot; fondo '+Math.abs(Math.round(c.z||0))+' m'),hoverinfo:'text'}); }
+        hovertext:dayRoutes.points.map(c=>'hotspot: '+c.cnt+'/'+dayRoutes.nH+' ore in risalita &middot; w medio '+((c.mw||0)*100).toFixed(2)+' cm/s &middot; fondo '+Math.abs(Math.round(c.z||0))+' m'),hoverinfo:'text'}); }
     return tr;
   }
   // Nuova feature: SEZIONE BATIMETRICA. Tocca due punti (A,B) sul fondale -> linea magenta drappeggiata sul fondo + profilo verticale 2D.
@@ -1377,7 +1395,7 @@ try {
     dayRoutes=computeDayRoutes();
     if($('routesOn')) $('routesOn').checked=true;
     const r=dayRoutes;
-    $('upwellMeteo').innerHTML=(r&&r.points&&r.points.length)?('rotte giorno: <b>'+r.points.length+'</b> hotspot &middot; fronte '+(r.front?r.front.length:0)+' vertici &middot; '+r.nH+' ore'):'rotte: dati insufficienti (corrente debole?)';
+    $('upwellMeteo').innerHTML=(r&&r.points&&r.points.length)?('rotte (persist. &ge;'+Math.round((r.persistFrac||0.7)*100)+'%): <b>'+r.points.length+'</b> zone top (di '+(r.clusters||0)+') &middot; '+(r.fronts?r.fronts.length:0)+' fronti &middot; '+r.nH+' ore'):'rotte: nessuna zona supera i criteri severi (corrente debole/instabile)';
     render3DScene();
   };
   $('routesOn').onchange=()=>render3DScene();

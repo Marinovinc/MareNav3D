@@ -191,7 +191,7 @@
       </div>
       <div class="ctlRow ctlSub" id="rowIso" style="display:none"><span>fascia</span><input id="isobandFrom" type="number" value="80" min="0" step="10">&ndash;<input id="isobandTo" type="number" value="120" min="0" step="10"> m</div>
       <div class="ctlRow ctlSub" id="rowIsoLines" style="display:none"><span>isobate ogni</span><input id="isoStep" type="number" value="100" min="10" step="10"> m</div>
-      <div class="ctlRow ctlSub" id="rowUpwellAdv" style="display:none;flex-wrap:wrap;gap:4px"><input type="datetime-local" id="upwellDateTime" style="font-size:10px;background:#11243c;border:1px solid #2c416c;color:#dfeaf5;border-radius:5px"><button id="upwellStepBtn" style="font-size:10px;padding:2px 6px;background:#16324f;border:1px solid #2c416c;color:#dfeaf5;border-radius:5px;cursor:pointer" title="Avanza di un'ora: l'upwelling dell'ora precedente resta come scia colorata">+1h &#9654;</button><button id="upwellClearBtn" style="font-size:10px;padding:2px 6px;background:#3a1a1a;border:1px solid #6c2c2c;color:#f5dede;border-radius:5px;cursor:pointer" title="Cancella le scie colorate">&#10006; scie</button><span id="upwellMeteo" style="font-size:10px;color:#8fb0cc">&mdash;</span></div>
+      <div class="ctlRow ctlSub" id="rowUpwellAdv" style="display:none;flex-wrap:wrap;gap:4px"><input type="datetime-local" id="upwellDateTime" style="font-size:10px;background:#11243c;border:1px solid #2c416c;color:#dfeaf5;border-radius:5px"><button id="upwellStepBtn" style="font-size:10px;padding:2px 6px;background:#16324f;border:1px solid #2c416c;color:#dfeaf5;border-radius:5px;cursor:pointer" title="Avanza di un'ora: l'upwelling dell'ora precedente resta come scia colorata">+1h &#9654;</button><button id="upwellClearBtn" style="font-size:10px;padding:2px 6px;background:#3a1a1a;border:1px solid #6c2c2c;color:#f5dede;border-radius:5px;cursor:pointer" title="Cancella le scie colorate">&#10006; scie</button><label style="font-size:10px;color:#8fb0cc;display:inline-flex;align-items:center;gap:2px" title="Mostra le frecce della corrente (campo uniforme dal vettore Open-Meteo al centro zona)"><input type="checkbox" id="currentOn"> corrente</label><span id="upwellMeteo" style="font-size:10px;color:#8fb0cc">&mdash;</span></div>
       <div class="ctlRow ctlSub" id="rowPlanes" style="display:none"><span>ogni</span><input type="number" id="planesStep" value="500" min="50" step="50"><span>m</span></div>
     </div>
   </div>
@@ -762,6 +762,31 @@ try {
     const bb=lastGrid.bb;
     return [{type:'surface',x:[bb.lonW,bb.lonE],y:[bb.latS,bb.latN],z:[[0,0],[0,0]],showscale:false,opacity:0.10,colorscale:[[0,'#7fc0ff'],[1,'#7fc0ff']],hoverinfo:'skip',name:'livello del mare'}];
   }
+  // CORRENTE VISIBILE: frecce di flusso sopra il fondale. Il vettore e' UNICO (Open-Meteo al centro zona) -> campo uniforme
+  // (frecce parallele): e' lo stesso dato che usa il calcolo dell'upwelling. Bearing geografico corretto (cosLat).
+  function currentTraces(){
+    if(!$('currentOn') || !$('currentOn').checked || !meteoMarine || !meteoMarine.current || !(meteoMarine.current.spd>0) || !lastGrid) return [];
+    const g=lastGrid, bb=g.bb;
+    const dir=(meteoMarine.current.dir||0)*Math.PI/180, ux=Math.sin(dir), uy=Math.cos(dir);   // est=sin, nord=cos
+    const cosLat=Math.max(0.2,Math.cos((bb.latS+bb.latN)/2*Math.PI/180));
+    const N=6, zoneW=(bb.lonE-bb.lonW), L=zoneW/(N*1.7);   // lunghezza freccia (gradi lon)
+    const zr=cur3d?cur3d.zRangeM:1000, elev=Math.max(40,zr*0.03);
+    const dlon=ux*L/cosLat, dlat=uy*L, dl=Math.hypot(dlon,dlat)||1e-9;   // testa freccia
+    const bxu=-dlon/dl, byu=-dlat/dl, bl=L*0.32;
+    const rot=(vx,vy, a)=>{ const c=Math.cos(a),s=Math.sin(a); return [vx*c-vy*s, vx*s+vy*c]; };
+    const [h1x,h1y]=rot(bxu,byu,0.44), [h2x,h2y]=rot(bxu,byu,-0.44);   // barbe ~25 gradi
+    const X=[],Y=[],Z=[];
+    for(let a=0;a<N;a++)for(let bc=0;bc<N;bc++){
+      const lat=bb.latS+(bb.latN-bb.latS)*(a+0.5)/N, lon=bb.lonW+(bb.lonE-bb.lonW)*(bc+0.5)/N;
+      const dep=gridDepth(g,lat,lon); if(dep==null||dep>0) continue;   // solo mare
+      const z=dep+elev, hx=lon+dlon, hy=lat+dlat;
+      X.push(lon,hx,null); Y.push(lat,hy,null); Z.push(z,z,null);                 // asta
+      X.push(hx,hx+h1x*bl,null); Y.push(hy,hy+h1y*bl,null); Z.push(z,z,null);     // barba 1
+      X.push(hx,hx+h2x*bl,null); Y.push(hy,hy+h2y*bl,null); Z.push(z,z,null);     // barba 2
+    }
+    if(!X.length) return [];
+    return [{type:'scatter3d',mode:'lines',x:X,y:Y,z:Z,line:{color:'#22e0ff',width:3},name:'corrente '+meteoMarine.current.spd.toFixed(1)+' km/h',hoverinfo:'skip'}];
+  }
   // Nuova feature: SEZIONE BATIMETRICA. Tocca due punti (A,B) sul fondale -> linea magenta drappeggiata sul fondo + profilo verticale 2D.
   function section3dTraces(){
     return [];   // Sezione = overlay 2D (drawSectionOverlay): ridisegnare la scena gl3d densa per 2 punti blocca le GPU
@@ -868,7 +893,7 @@ try {
       marker:{size:2.7,color:'#8dff3a',opacity:0.85},hovertemplate:'fascia <b>'+from+'&ndash;'+to+' m</b><extra></extra>'}];
   }
   function render3DScene(){ if(!cur3d) return; const lc=liveCamera(); if(lc) cur3d.layout.scene.camera=lc;   // preserva la vista corrente
-    Plotly.react('zone',[...cur3d.base,...seaLevelTrace(),...boat3dTraces(),...section3dTraces(),...isobandTraces(),...upwellTraces(),...buildPlanes()],cur3d.layout,{displayModeBar:false,responsive:true,doubleClick:false}); }
+    Plotly.react('zone',[...cur3d.base,...seaLevelTrace(),...boat3dTraces(),...section3dTraces(),...isobandTraces(),...upwellTraces(),...currentTraces(),...buildPlanes()],cur3d.layout,{displayModeBar:false,responsive:true,doubleClick:false}); }
   // La Sezione vive nel grafico 2D (showSectionProfile), NON nel modello 3D: qualsiasi modifica alla scena
   // gl3d ri-renderizza l'intera superficie densa (centinaia di migliaia di vertici) e blocca le GPU deboli.
   // Ombreggiatura rilievo (hillshade): luce radente regolabile per azimut del sole -> scarpate/canyon in risalto.
@@ -1140,7 +1165,7 @@ try {
     const surfIdx = useTopo ? [0] : [0,1];
     cur3d={ base:base, surfIdx:surfIdx, layout:layout, bb:g.bb, maxD:maxD, zRangeM:zRangeM, mD:mD, zmin:zmin, zmax:zmax,
             eye0:{x:veEye.x,y:veEye.y,z:veEye.z}, d0:Math.hypot(veEye.x,veEye.y,veEye.z) };   // camera default + distanza iniziale (per clamp zoom e reset)
-    await Plotly.newPlot('zone',[...cur3d.base,...seaLevelTrace(),...boat3dTraces(),...section3dTraces(),...isobandTraces(),...upwellTraces(),...buildPlanes()],layout,{displayModeBar:false,responsive:true,doubleClick:false});
+    await Plotly.newPlot('zone',[...cur3d.base,...seaLevelTrace(),...boat3dTraces(),...section3dTraces(),...isobandTraces(),...upwellTraces(),...currentTraces(),...buildPlanes()],layout,{displayModeBar:false,responsive:true,doubleClick:false});
     $('zone3dov').style.display='none';   // overlay gl3d sovrapposto disattivato (non renderizzava su GPU reali) -> Sezione usa overlay 2D SVG
     if($('shadeOn')&&$('shadeOn').checked) applyShading();   // ri-applica l'hillshade sulla scena appena (ri)costruita
     if($('isoLinesOn')&&$('isoLinesOn').checked) applyIsoLines();   // ri-applica le linee isobate
@@ -1263,11 +1288,13 @@ try {
     if($('upwellAdvOn').checked){
       if(!$('upwellDateTime').value){ const d=new Date(),pad=n=>String(n).padStart(2,'0'); $('upwellDateTime').value=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T12:00'; }
       readout3dHint('Upwelling+: la morfologia e\' modulata dalla CORRENTE reale. Usa +1h per vedere l\'upwelling cambiare nel tempo (scie colorate).');
+      if($('currentOn')) $('currentOn').checked=true;   // mostra subito le frecce della corrente
       fetchMeteoMarine();
     } else { meteoMarine=null; upwellHistory=[]; render3DScene(); } };
   $('upwellDateTime').onchange=()=>{ if($('upwellAdvOn').checked) fetchMeteoMarine(); };
   $('upwellStepBtn').onclick=()=>upwellStep(1);
   $('upwellClearBtn').onclick=()=>{ upwellHistory=[]; render3DScene(); };
+  $('currentOn').onchange=()=>render3DScene();
   // Switch stile fondale: 'classic' (2 superfici mare/terra) <-> 'rotta' (superficie topografica unica con isolinee).
   // Ridisegna la stessa griglia gia' scaricata (nessun re-download).
   $('styleRotta').onchange=()=>{ seabedStyle=$('styleRotta').checked?'rotta':'classic';

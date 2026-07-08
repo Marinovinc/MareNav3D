@@ -191,7 +191,7 @@
       </div>
       <div class="ctlRow ctlSub" id="rowIso" style="display:none"><span>fascia</span><input id="isobandFrom" type="number" value="80" min="0" step="10">&ndash;<input id="isobandTo" type="number" value="120" min="0" step="10"> m</div>
       <div class="ctlRow ctlSub" id="rowIsoLines" style="display:none"><span>isobate ogni</span><input id="isoStep" type="number" value="100" min="10" step="10"> m</div>
-      <div class="ctlRow ctlSub" id="rowUpwellAdv" style="display:none;flex-wrap:wrap;gap:4px"><input type="datetime-local" id="upwellDateTime" style="font-size:10px;background:#11243c;border:1px solid #2c416c;color:#dfeaf5;border-radius:5px"><button id="upwellStepBtn" style="font-size:10px;padding:2px 6px;background:#16324f;border:1px solid #2c416c;color:#dfeaf5;border-radius:5px;cursor:pointer" title="Avanza di un'ora: l'upwelling dell'ora precedente resta come scia colorata">+1h &#9654;</button><button id="upwellClearBtn" style="font-size:10px;padding:2px 6px;background:#3a1a1a;border:1px solid #6c2c2c;color:#f5dede;border-radius:5px;cursor:pointer" title="Cancella le scie colorate">&#10006; scie</button><label style="font-size:10px;color:#8fb0cc;display:inline-flex;align-items:center;gap:2px" title="Mostra le frecce della corrente (campo uniforme dal vettore Open-Meteo al centro zona)"><input type="checkbox" id="currentOn"> corrente</label><span id="upwellMeteo" style="font-size:10px;color:#8fb0cc">&mdash;</span></div>
+      <div class="ctlRow ctlSub" id="rowUpwellAdv" style="display:none;flex-wrap:wrap;gap:4px"><input type="datetime-local" id="upwellDateTime" style="font-size:10px;background:#11243c;border:1px solid #2c416c;color:#dfeaf5;border-radius:5px"><button id="upwellStepBtn" style="font-size:10px;padding:2px 6px;background:#16324f;border:1px solid #2c416c;color:#dfeaf5;border-radius:5px;cursor:pointer" title="Avanza di un'ora: l'upwelling dell'ora precedente resta come scia colorata">+1h &#9654;</button><button id="upwellClearBtn" style="font-size:10px;padding:2px 6px;background:#3a1a1a;border:1px solid #6c2c2c;color:#f5dede;border-radius:5px;cursor:pointer" title="Cancella le scie colorate">&#10006; scie</button><label style="font-size:10px;color:#8fb0cc;display:inline-flex;align-items:center;gap:2px" title="Mostra le frecce della corrente (campo uniforme dal vettore Open-Meteo al centro zona)"><input type="checkbox" id="currentOn"> corrente</label><button id="routesBtn" style="font-size:10px;padding:2px 6px;background:#16324f;border:1px solid #2c416c;color:#dfeaf5;border-radius:5px;cursor:pointer" title="Calcola le rotte del giorno: hotspot di upwelling persistenti (rotta) + bordi/fronti, su tutte le ore">&#9875; rotte</button><label style="font-size:10px;color:#8fb0cc;display:inline-flex;align-items:center;gap:2px" title="Mostra/nascondi le rotte calcolate"><input type="checkbox" id="routesOn"> mostra</label><span id="upwellMeteo" style="font-size:10px;color:#8fb0cc">&mdash;</span></div>
       <div class="ctlRow ctlSub" id="rowPlanes" style="display:none"><span>ogni</span><input type="number" id="planesStep" value="500" min="50" step="50"><span>m</span></div>
     </div>
   </div>
@@ -643,6 +643,7 @@ try {
   let meteoSeries=null;    // serie ORARIA completa in cache (7 giorni) -> stepping senza rete
   let upwellHistory=[];    // scie temporali: [{hourISO, hue, cells:[{lat,lon,z,w}]}]
   let lastUpwellCells=null;// celle upwelling dell'ultimo calcolo fisico (per congelarle come scia)
+  let dayRoutes=null;      // rotte calcolate sull'intera giornata {points:[...], edges:[...], nH}
   async function fetchMeteoMarine(force){
     if(!lastGrid) return;
     const bb=lastGrid.bb, lat=((bb.latS+bb.latN)/2).toFixed(3), lon=((bb.lonW+bb.lonE)/2).toFixed(3);
@@ -792,6 +793,75 @@ try {
     if(!X.length) return [];
     return [{type:'scatter3d',mode:'lines',x:X,y:Y,z:Z,line:{color:'#22e0ff',width:3},name:'corrente '+meteoMarine.current.spd.toFixed(1)+' km/h',hoverinfo:'skip'}];
   }
+  // ROTTE GIORNATA: calcola l'upwelling fisico (w=u.grad(h)) per OGNI ora del giorno (dalla serie in cache, zero rete),
+  // misura la PERSISTENZA di ogni cella (quante ore resta in risalita) e costruisce 2 rotte:
+  //  - rotta HOTSPOT PERSISTENTI: celle in risalita >=50% delle ore, separate spazialmente, collegate nearest-neighbor.
+  //  - FRONTE: bordo della macchia persistente (celle con almeno un vicino NON persistente).
+  function computeDayRoutes(){
+    if(!lastGrid || !meteoSeries) return null;
+    const dt=$('upwellDateTime').value; if(!dt) return null;
+    const day=dt.slice(0,10);
+    const g=lastGrid, zz=g.zz, rows=g.rows, cols=g.cols, lats=g.lats, lons=g.lons;
+    const cLat=(g.bb.latS+g.bb.latN)/2*Math.PI/180;
+    const cellMx=Math.max(5,((g.bb.lonE-g.bb.lonW)/(cols-1))*111320*Math.cos(cLat));
+    const cellMy=Math.max(5,((g.bb.latN-g.bb.latS)/(rows-1))*110574);
+    const geom=[];   // geometria fondale (indipendente dall'ora)
+    for(let i=1;i<rows-1;i++)for(let j=1;j<cols-1;j++){
+      const v=zz[i][j]; if(v==null||v>0) continue;
+      const l=zz[i][j-1],r=zz[i][j+1],u=zz[i-1][j],d=zz[i+1][j];
+      if(l==null||r==null||u==null||d==null) continue;
+      geom.push({i,j,dzdx:(r-l)/(2*cellMx),dzdy:(u-d)/(2*cellMy)});
+    }
+    if(!geom.length) return null;
+    const hours=[]; for(let h=0;h<24;h++){ const hs=day+'T'+String(h).padStart(2,'0')+':00'; if(meteoSeries.mt.indexOf(hs)>=0) hours.push(hs); }
+    if(!hours.length) return null;
+    const persist=new Map(), wsum=new Map();
+    let usedH=0;
+    hours.forEach(hs=>{ const mi=meteoSeries.mt.indexOf(hs); const spd=meteoSeries.vel[mi], dir=meteoSeries.dir[mi];
+      if(spd==null || !(spd>0)) return; usedH++;
+      const cd=(dir||0)*Math.PI/180, cUx=Math.sin(cd), cUy=Math.cos(cd), u_ms=spd/3.6;
+      geom.forEach(c=>{ const w=u_ms*(cUx*c.dzdx+cUy*c.dzdy); if(w>0){ const k=c.i*cols+c.j; persist.set(k,(persist.get(k)||0)+1); wsum.set(k,(wsum.get(k)||0)+w); } });
+    });
+    if(!usedH) return {points:[],edges:[],nH:0};
+    const thrH=Math.max(1,Math.ceil(usedH*0.5));
+    const persistCells=[];
+    persist.forEach((cnt,k)=>{ if(cnt>=thrH){ const i=Math.floor(k/cols), j=k%cols; persistCells.push({i,j,cnt,mw:wsum.get(k)/cnt,lat:lats[i],lon:lons[j],z:zz[i][j]}); } });
+    if(!persistCells.length) return {points:[],edges:[],nH:usedH};
+    // ROTTA PUNTI: greedy per (persistenza, w medio) con separazione minima ~1/8 zona
+    persistCells.sort((a,b)=>(b.cnt-a.cnt)||(b.mw-a.mw));
+    const sepDeg=Math.max((g.bb.lonE-g.bb.lonW),(g.bb.latN-g.bb.latS))/8;
+    const way=[];
+    for(const c of persistCells){ if(way.every(p=>Math.hypot(p.lon-c.lon,p.lat-c.lat)>sepDeg)){ way.push(c); if(way.length>=10) break; } }
+    // ordina nearest-neighbor partendo da ovest
+    const pool=way.slice(); const route=[];
+    let cur=pool.reduce((a,b)=>b.lon<a.lon?b:a,pool[0]); pool.splice(pool.indexOf(cur),1); route.push(cur);
+    while(pool.length){ let nx=pool.reduce((a,b)=>(Math.hypot(b.lon-cur.lon,b.lat-cur.lat)<Math.hypot(a.lon-cur.lon,a.lat-cur.lat))?b:a,pool[0]); pool.splice(pool.indexOf(nx),1); route.push(nx); cur=nx; }
+    // FRONTE = perimetro (convex hull) del nucleo forte-persistente -> rotta ad anello attorno alla zona produttiva.
+    const strong=persistCells.slice().sort((a,b)=>b.mw-a.mw).slice(0,200);
+    const front=convexHull(strong.map(c=>({x:c.lon,y:c.lat,z:c.z})));
+    return {points:route, front, coreN:strong.length, nH:usedH, persistTot:persistCells.length};
+  }
+  // Convex hull 2D (monotone chain di Andrew): ordina i punti in un poligono perimetrale.
+  function convexHull(pts){
+    if(pts.length<3) return pts.slice();
+    const p=pts.slice().sort((a,b)=>a.x-b.x||a.y-b.y);
+    const cr=(o,a,b)=>(a.x-o.x)*(b.y-o.y)-(a.y-o.y)*(b.x-o.x);
+    const lo=[]; for(const q of p){ while(lo.length>=2 && cr(lo[lo.length-2],lo[lo.length-1],q)<=0) lo.pop(); lo.push(q); }
+    const up=[]; for(let i=p.length-1;i>=0;i--){ const q=p[i]; while(up.length>=2 && cr(up[up.length-2],up[up.length-1],q)<=0) up.pop(); up.push(q); }
+    lo.pop(); up.pop(); return lo.concat(up);
+  }
+  // Tracce delle rotte (fronte + rotta punti) drappeggiate sul fondale.
+  function routesTraces(){
+    if(!$('routesOn') || !$('routesOn').checked || !dayRoutes || !lastGrid) return [];
+    const off=Math.max(20,(cur3d?cur3d.zRangeM:1000)*0.02), tr=[];
+    if(dayRoutes.front && dayRoutes.front.length>=3){ const fx=[],fy=[],fz=[]; dayRoutes.front.forEach(c=>{ fx.push(c.x); fy.push(c.y); fz.push((c.z||0)+off); });
+      fx.push(dayRoutes.front[0].x); fy.push(dayRoutes.front[0].y); fz.push((dayRoutes.front[0].z||0)+off);   // chiudi l'anello
+      tr.push({type:'scatter3d',mode:'lines',x:fx,y:fy,z:fz,name:'fronte (bordo zona produttiva)',line:{color:'#00ffd0',width:4},hovertext:'fronte: perimetro della zona di upwelling persistente (dove i pelagici cacciano)',hoverinfo:'text'}); }
+    if(dayRoutes.points && dayRoutes.points.length){ const px=[],py=[],pz=[]; dayRoutes.points.forEach(c=>{ px.push(c.lon); py.push(c.lat); pz.push((c.z||0)+off*1.4); });
+      tr.push({type:'scatter3d',mode:'lines+markers',x:px,y:py,z:pz,name:'rotta hotspot persistenti',line:{color:'#ffffff',width:5},marker:{size:5,color:'#ff2d2d'},
+        hovertext:dayRoutes.points.map(c=>'hotspot: upwelling in '+c.cnt+'/'+dayRoutes.nH+' ore &middot; fondo '+Math.abs(Math.round(c.z||0))+' m'),hoverinfo:'text'}); }
+    return tr;
+  }
   // Nuova feature: SEZIONE BATIMETRICA. Tocca due punti (A,B) sul fondale -> linea magenta drappeggiata sul fondo + profilo verticale 2D.
   function section3dTraces(){
     return [];   // Sezione = overlay 2D (drawSectionOverlay): ridisegnare la scena gl3d densa per 2 punti blocca le GPU
@@ -898,7 +968,7 @@ try {
       marker:{size:2.7,color:'#8dff3a',opacity:0.85},hovertemplate:'fascia <b>'+from+'&ndash;'+to+' m</b><extra></extra>'}];
   }
   function render3DScene(){ if(!cur3d) return; const lc=liveCamera(); if(lc) cur3d.layout.scene.camera=lc;   // preserva la vista corrente
-    Plotly.react('zone',[...cur3d.base,...seaLevelTrace(),...boat3dTraces(),...section3dTraces(),...isobandTraces(),...upwellTraces(),...currentTraces(),...buildPlanes()],cur3d.layout,{displayModeBar:false,responsive:true,doubleClick:false}); }
+    Plotly.react('zone',[...cur3d.base,...seaLevelTrace(),...boat3dTraces(),...section3dTraces(),...isobandTraces(),...upwellTraces(),...currentTraces(),...routesTraces(),...buildPlanes()],cur3d.layout,{displayModeBar:false,responsive:true,doubleClick:false}); }
   // La Sezione vive nel grafico 2D (showSectionProfile), NON nel modello 3D: qualsiasi modifica alla scena
   // gl3d ri-renderizza l'intera superficie densa (centinaia di migliaia di vertici) e blocca le GPU deboli.
   // Ombreggiatura rilievo (hillshade): luce radente regolabile per azimut del sole -> scarpate/canyon in risalto.
@@ -1061,7 +1131,7 @@ try {
       : (_lc ? {up:_lc.up, center:{x:0,y:0,z:0}, eye:{x:_lc.eye.x-_lc.center.x, y:_lc.eye.y-_lc.center.y, z:_lc.eye.z-_lc.center.z}} : null);
     removeCurtains(g); window.MLP.decurtain=g._decurtain; window.MLP.decurtainEdge=g._decurtainEdge;   // togli le tende verticali artefatte (bordi inclusi) prima di costruire le superfici
     lastGrid=g; window.MLP.lastBBox=g.bb;   // memorizza griglia + bbox (per riprodurre l'area esatta in caso di artefatti: leggere MLP.lastBBox in console)
-    upwellHistory=[]; meteoSeries=null; lastUpwellCells=null;   // nuova zona -> azzera scie e serie meteo in cache
+    upwellHistory=[]; meteoSeries=null; lastUpwellCells=null; dayRoutes=null;   // nuova zona -> azzera scie, serie meteo e rotte
     const useTopo=(seabedStyle==='rotta');
     const gd = sectionMode ? makeLightGrid(g,200) : g;   // Sezione attiva -> superficie rada per il display
     const depthPos=gd.zz.map(r=>r.map(v=>v==null?null:Math.max(0,Math.round(-v))));
@@ -1170,7 +1240,7 @@ try {
     const surfIdx = useTopo ? [0] : [0,1];
     cur3d={ base:base, surfIdx:surfIdx, layout:layout, bb:g.bb, maxD:maxD, zRangeM:zRangeM, mD:mD, zmin:zmin, zmax:zmax,
             eye0:{x:veEye.x,y:veEye.y,z:veEye.z}, d0:Math.hypot(veEye.x,veEye.y,veEye.z) };   // camera default + distanza iniziale (per clamp zoom e reset)
-    await Plotly.newPlot('zone',[...cur3d.base,...seaLevelTrace(),...boat3dTraces(),...section3dTraces(),...isobandTraces(),...upwellTraces(),...currentTraces(),...buildPlanes()],layout,{displayModeBar:false,responsive:true,doubleClick:false});
+    await Plotly.newPlot('zone',[...cur3d.base,...seaLevelTrace(),...boat3dTraces(),...section3dTraces(),...isobandTraces(),...upwellTraces(),...currentTraces(),...routesTraces(),...buildPlanes()],layout,{displayModeBar:false,responsive:true,doubleClick:false});
     $('zone3dov').style.display='none';   // overlay gl3d sovrapposto disattivato (non renderizzava su GPU reali) -> Sezione usa overlay 2D SVG
     if($('shadeOn')&&$('shadeOn').checked) applyShading();   // ri-applica l'hillshade sulla scena appena (ri)costruita
     if($('isoLinesOn')&&$('isoLinesOn').checked) applyIsoLines();   // ri-applica le linee isobate
@@ -1300,6 +1370,17 @@ try {
   $('upwellStepBtn').onclick=()=>upwellStep(1);
   $('upwellClearBtn').onclick=()=>{ upwellHistory=[]; render3DScene(); };
   $('currentOn').onchange=()=>render3DScene();
+  $('routesBtn').onclick=async ()=>{
+    if(!lastGrid) return;
+    if(!$('upwellDateTime').value){ const d=new Date(),pad=n=>String(n).padStart(2,'0'); $('upwellDateTime').value=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T12:00'; }
+    if(!meteoSeries){ $('upwellMeteo').textContent='carico meteo per le rotte…'; await fetchMeteoMarine(); }
+    dayRoutes=computeDayRoutes();
+    if($('routesOn')) $('routesOn').checked=true;
+    const r=dayRoutes;
+    $('upwellMeteo').innerHTML=(r&&r.points&&r.points.length)?('rotte giorno: <b>'+r.points.length+'</b> hotspot &middot; fronte '+(r.front?r.front.length:0)+' vertici &middot; '+r.nH+' ore'):'rotte: dati insufficienti (corrente debole?)';
+    render3DScene();
+  };
+  $('routesOn').onchange=()=>render3DScene();
   // Switch stile fondale: 'classic' (2 superfici mare/terra) <-> 'rotta' (superficie topografica unica con isolinee).
   // Ridisegna la stessa griglia gia' scaricata (nessun re-download).
   $('styleRotta').onchange=()=>{ seabedStyle=$('styleRotta').checked?'rotta':'classic';

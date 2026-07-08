@@ -677,9 +677,9 @@ try {
   // Congela l'upwelling dell'ora corrente come "scia" colorata (tinta per ora: mattina blu -> sera rossa) prima di avanzare.
   function pushUpwellTrail(){
     if(!lastUpwellCells || !lastUpwellCells.length || !meteoMarine || !meteoMarine.time) return;
-    const hr=parseInt(String(meteoMarine.time).slice(11,13)); const hue=260-((isNaN(hr)?12:hr)/24)*260;   // 260(blu)->0(rosso)
+    const hr=parseInt(String(meteoMarine.time).slice(11,13));
     if(upwellHistory.length && upwellHistory[upwellHistory.length-1].hourISO===meteoMarine.time) return;   // no doppioni stessa ora
-    upwellHistory.push({hourISO:meteoMarine.time, hue, cells:lastUpwellCells.slice(0,140)});
+    upwellHistory.push({hourISO:meteoMarine.time, hr:(isNaN(hr)?12:hr), cells:lastUpwellCells.slice(0,140)});
     if(upwellHistory.length>12) upwellHistory.shift();
   }
   // Avanza l'ora di dh (ore), lasciando una scia colorata dell'ora precedente.
@@ -732,13 +732,18 @@ try {
         txt.push('risalita al fondo <b>'+(c.w*100).toFixed(2)+' cm/s</b> &middot; fondo '+Math.abs(Math.round(zz[c.i][c.j]))+' m'); });
       lastUpwellCells=up.map(c=>({lat:lats[c.i],lon:lons[c.j],z:zz[c.i][c.j]+off,w:c.w}));   // per congelarle come scia allo step
       window.MLP.upwellCount=x.length; window.MLP.upwellWmax=wp95; window.MLP.upwellTrails=upwellHistory.length;
+      // Palette per ORA: 8 colori nettamente distinti (evito il ciano, riservato alle frecce corrente). Ogni ora -> colore diverso.
+      const UPW_PAL=['#ff3b3b','#ff9a1f','#ffe93b','#8cff3b','#3bff9a','#c86bff','#ff5bd0','#c0a060'];
+      const curHr=parseInt(String(meteoMarine.time||'').slice(11,13)); const curCol=UPW_PAL[(isNaN(curHr)?12:curHr)%8];
+      window.MLP.upwellColor=curCol;
+      // Punti dell'ora CORRENTE: colore = ora (cambia a ogni step); intensita' w -> DIMENSIONE del punto (grande = risalita forte).
       const cur={type:'scatter3d',mode:'markers',x:x,y:y,z:z,name:'upwelling '+String(meteoMarine.time||'').slice(11,16),
-        marker:{size:3.8,color:col,colorscale:[[0,'rgba(255,214,74,0.5)'],[0.5,'rgba(255,140,26,0.9)'],[1,'rgba(255,45,45,1)']],cmin:0,cmax:1,showscale:false},
+        marker:{size:col.map(v=>3.2+3.0*v),color:curCol,opacity:0.95},
         hovertext:txt,hoverinfo:'text'};
-      // Scie ore precedenti: ogni ora una tinta diversa (blu mattina -> rosso sera), semitrasparenti -> si vede l'upwelling migrare.
+      // Scie ore precedenti: stesso colore della loro ora, semitrasparenti e piccole -> si vede l'upwelling migrare.
       const trails=upwellHistory.map(h=>{ const hx=[],hy=[],hz=[]; h.cells.forEach(c=>{hx.push(c.lon);hy.push(c.lat);hz.push(c.z);});
         return {type:'scatter3d',mode:'markers',x:hx,y:hy,z:hz,name:'scia '+h.hourISO.slice(11,16),showlegend:false,
-          marker:{size:2.6,color:'hsl('+Math.round(h.hue)+',90%,55%)',opacity:0.5},
+          marker:{size:2.8,color:UPW_PAL[h.hr%8],opacity:0.5},
           hovertext:h.hourISO.slice(5,16).replace('T',' '),hoverinfo:'text'}; });
       return [...trails, cur];
     }

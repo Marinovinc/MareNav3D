@@ -1192,6 +1192,7 @@ try {
     removeCurtains(g); window.MLP.decurtain=g._decurtain; window.MLP.decurtainEdge=g._decurtainEdge;   // togli le tende verticali artefatte (bordi inclusi) prima di costruire le superfici
     lastGrid=g; window.MLP.lastBBox=g.bb;   // memorizza griglia + bbox (per riprodurre l'area esatta in caso di artefatti: leggere MLP.lastBBox in console)
     upwellHistory=[]; meteoSeries=null; lastUpwellCells=null; dayRoutes=null;   // nuova zona -> azzera scie, serie meteo e rotte
+    if($('routesOn')) $('routesOn').checked=false;   // niente rotte sulla nuova zona finche' non si ricalcolano
     const useTopo=(seabedStyle==='rotta');
     const gd = sectionMode ? makeLightGrid(g,200) : g;   // Sezione attiva -> superficie rada per il display
     const depthPos=gd.zz.map(r=>r.map(v=>v==null?null:Math.max(0,Math.round(-v))));
@@ -1430,17 +1431,16 @@ try {
   $('upwellStepBtn').onclick=()=>upwellStep(1);
   $('upwellClearBtn').onclick=()=>{ upwellHistory=[]; render3DScene(); };
   $('currentOn').onchange=()=>render3DScene();
-  $('routesBtn').onclick=async ()=>{
+  async function ensureRoutes(){   // calcola le rotte del giorno (usata da pulsante e checkbox) -> checkare "mostra" le rigenera sempre
     if(!lastGrid) return;
     if(!$('upwellDateTime').value){ const d=new Date(),pad=n=>String(n).padStart(2,'0'); $('upwellDateTime').value=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T12:00'; }
     if(!meteoSeries){ $('upwellMeteo').textContent='carico meteo per le rotte…'; await fetchMeteoMarine(); }
     dayRoutes=computeDayRoutes();
-    if($('routesOn')) $('routesOn').checked=true;
     const r=dayRoutes;
     $('upwellMeteo').innerHTML=(r&&r.points&&r.points.length)?('rotte (persist. &ge;'+Math.round((r.persistFrac||0.7)*100)+'%): <b>'+r.points.length+'</b> zone top (di '+(r.clusters||0)+') &middot; '+(r.fronts?r.fronts.length:0)+' fronti &middot; '+r.nH+' ore'):'rotte: nessuna zona supera i criteri severi (corrente debole/instabile)';
-    render3DScene();
-  };
-  $('routesOn').onchange=()=>render3DScene();
+  }
+  $('routesBtn').onclick=async ()=>{ await ensureRoutes(); if($('routesOn')) $('routesOn').checked=true; render3DScene(); };
+  $('routesOn').onchange=async ()=>{ if($('routesOn').checked && (!dayRoutes || !dayRoutes.points || !dayRoutes.points.length)) await ensureRoutes(); render3DScene(); };
   $('catchOn').onchange=()=>render3DScene();
   // Switch stile fondale: 'classic' (2 superfici mare/terra) <-> 'rotta' (superficie topografica unica con isolinee).
   // Ridisegna la stessa griglia gia' scaricata (nessun re-download).

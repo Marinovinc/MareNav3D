@@ -191,7 +191,7 @@
       </div>
       <div class="ctlRow ctlSub" id="rowIso" style="display:none"><span>fascia</span><input id="isobandFrom" type="number" value="80" min="0" step="10">&ndash;<input id="isobandTo" type="number" value="120" min="0" step="10"> m</div>
       <div class="ctlRow ctlSub" id="rowIsoLines" style="display:none"><span>isobate ogni</span><input id="isoStep" type="number" value="100" min="10" step="10"> m</div>
-      <div class="ctlRow ctlSub" id="rowUpwellAdv" style="display:none;flex-wrap:wrap;gap:4px"><input type="datetime-local" id="upwellDateTime" style="font-size:10px;background:#11243c;border:1px solid #2c416c;color:#dfeaf5;border-radius:5px"><span id="upwellMeteo" style="font-size:10px;color:#8fb0cc">&mdash;</span></div>
+      <div class="ctlRow ctlSub" id="rowUpwellAdv" style="display:none;flex-wrap:wrap;gap:4px"><input type="datetime-local" id="upwellDateTime" style="font-size:10px;background:#11243c;border:1px solid #2c416c;color:#dfeaf5;border-radius:5px"><button id="upwellStepBtn" style="font-size:10px;padding:2px 6px;background:#16324f;border:1px solid #2c416c;color:#dfeaf5;border-radius:5px;cursor:pointer" title="Avanza di un'ora: l'upwelling dell'ora precedente resta come scia colorata">+1h &#9654;</button><button id="upwellClearBtn" style="font-size:10px;padding:2px 6px;background:#3a1a1a;border:1px solid #6c2c2c;color:#f5dede;border-radius:5px;cursor:pointer" title="Cancella le scie colorate">&#10006; scie</button><span id="upwellMeteo" style="font-size:10px;color:#8fb0cc">&mdash;</span></div>
       <div class="ctlRow ctlSub" id="rowPlanes" style="display:none"><span>ogni</span><input type="number" id="planesStep" value="500" min="50" step="50"><span>m</span></div>
     </div>
   </div>
@@ -639,12 +639,17 @@ try {
   // (a) SCARPATE = alto gradiente di profondita' (|grad z| in m/m); (b) BANCHI/DORSALI = convessita' positiva (fondo piu' alto dei vicini).
   // Punteggio = 0.75*pendenza_norm + 0.25*convessita_norm (normalizzate al 95-esimo percentile); mostra il top ~12% come marker caldi drappeggiati.
   // Upwelling+: condizioni meteo-mare reali (Open-Meteo) al centro area e all'ora scelta. Correnti (marine API) + vento (forecast API).
-  let meteoMarine=null;   // {current:{spd,dir}, wind:{spd,dir}, time}
-  async function fetchMeteoMarine(){
+  let meteoMarine=null;    // stato all'ora corrente {current:{spd,dir}, wind:{spd,dir}, time}
+  let meteoSeries=null;    // serie ORARIA completa in cache (7 giorni) -> stepping senza rete
+  let upwellHistory=[];    // scie temporali: [{hourISO, hue, cells:[{lat,lon,z,w}]}]
+  let lastUpwellCells=null;// celle upwelling dell'ultimo calcolo fisico (per congelarle come scia)
+  async function fetchMeteoMarine(force){
     if(!lastGrid) return;
     const bb=lastGrid.bb, lat=((bb.latS+bb.latN)/2).toFixed(3), lon=((bb.lonW+bb.lonE)/2).toFixed(3);
     const dt=$('upwellDateTime').value; if(!dt){ return; }
     const hourISO=dt.slice(0,13)+':00';   // YYYY-MM-DDTHH:00 (locale, come timezone=auto)
+    // Cache: la serie oraria copre gia' 7 giorni per questa zona -> avanzare di un'ora NON richiede rete.
+    if(!force && meteoSeries && meteoSeries.lat===lat && meteoSeries.lon===lon && meteoSeries.mt.indexOf(hourISO)>=0){ setMeteoAt(hourISO); return; }
     $('upwellMeteo').textContent='carico meteo-mare…';
     try{
       const [mR,wR]=await Promise.all([
@@ -652,14 +657,40 @@ try {
         fetch('https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lon+'&hourly=wind_speed_10m,wind_direction_10m&timezone=auto&forecast_days=7')
       ]);
       const m=await mR.json(), w=await wR.json();
-      const mi=m.hourly.time.indexOf(hourISO), wi=w.hourly.time.indexOf(hourISO);
-      if(mi<0){ $('upwellMeteo').textContent='ora fuori intervallo (max +7 giorni)'; meteoMarine=null; render3DScene(); return; }
-      meteoMarine={ current:{spd:m.hourly.ocean_current_velocity[mi], dir:m.hourly.ocean_current_direction[mi]},
-        wind:(wi>=0?{spd:w.hourly.wind_speed_10m[wi], dir:w.hourly.wind_direction_10m[wi]}:null), time:hourISO };
-      const c=meteoMarine.current, wd=meteoMarine.wind;
-      $('upwellMeteo').innerHTML='corrente <b>'+(c.spd!=null?c.spd.toFixed(1):'?')+' km/h</b> '+Math.round(c.dir||0)+'&deg;'+(wd&&wd.spd!=null?' &middot; vento '+wd.spd.toFixed(0)+' km/h '+Math.round(wd.dir||0)+'&deg;':'');
-      render3DScene();
+      meteoSeries={ lat, lon, mt:m.hourly.time, vel:m.hourly.ocean_current_velocity, dir:m.hourly.ocean_current_direction,
+        wt:w.hourly.time, wspd:w.hourly.wind_speed_10m, wdir:w.hourly.wind_direction_10m };
+      setMeteoAt(hourISO);
     }catch(e){ $('upwellMeteo').textContent='errore meteo-mare (rete?)'; meteoMarine=null; }
+  }
+  // Imposta lo stato meteo all'ora indicata leggendo dalla serie in cache (nessuna rete).
+  function setMeteoAt(hourISO){
+    if(!meteoSeries) return;
+    const mi=meteoSeries.mt.indexOf(hourISO);
+    if(mi<0){ $('upwellMeteo').textContent='ora fuori intervallo (max +7 giorni)'; meteoMarine=null; render3DScene(); return; }
+    const wi=meteoSeries.wt.indexOf(hourISO);
+    meteoMarine={ current:{spd:meteoSeries.vel[mi], dir:meteoSeries.dir[mi]},
+      wind:(wi>=0?{spd:meteoSeries.wspd[wi], dir:meteoSeries.wdir[wi]}:null), time:hourISO };
+    const c=meteoMarine.current, wd=meteoMarine.wind;
+    $('upwellMeteo').innerHTML=hourISO.slice(5,16).replace('T',' ')+': corrente <b>'+(c.spd!=null?c.spd.toFixed(1):'?')+' km/h</b> '+Math.round(c.dir||0)+'&deg;'+(wd&&wd.spd!=null?' &middot; vento '+wd.spd.toFixed(0)+' km/h '+Math.round(wd.dir||0)+'&deg;':'');
+    render3DScene();
+  }
+  // Congela l'upwelling dell'ora corrente come "scia" colorata (tinta per ora: mattina blu -> sera rossa) prima di avanzare.
+  function pushUpwellTrail(){
+    if(!lastUpwellCells || !lastUpwellCells.length || !meteoMarine || !meteoMarine.time) return;
+    const hr=parseInt(String(meteoMarine.time).slice(11,13)); const hue=260-((isNaN(hr)?12:hr)/24)*260;   // 260(blu)->0(rosso)
+    if(upwellHistory.length && upwellHistory[upwellHistory.length-1].hourISO===meteoMarine.time) return;   // no doppioni stessa ora
+    upwellHistory.push({hourISO:meteoMarine.time, hue, cells:lastUpwellCells.slice(0,140)});
+    if(upwellHistory.length>12) upwellHistory.shift();
+  }
+  // Avanza l'ora di dh (ore), lasciando una scia colorata dell'ora precedente.
+  function upwellStep(dh){
+    if(!$('upwellAdvOn') || !$('upwellAdvOn').checked) return;
+    pushUpwellTrail();
+    const dt=$('upwellDateTime').value; if(!dt) return;
+    const d=new Date(dt); d.setHours(d.getHours()+dh);
+    const pad=n=>String(n).padStart(2,'0');
+    $('upwellDateTime').value=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
+    fetchMeteoMarine();
   }
   function upwellTraces(){
     const basicOn=$('upwellOn').checked, advOn=$('upwellAdvOn')&&$('upwellAdvOn').checked;
@@ -699,10 +730,17 @@ try {
       up.sort((a,b)=>b.w-a.w); if(up.length>CAP) up=up.slice(0,CAP);
       up.forEach(c=>{ x.push(lons[c.j]); y.push(lats[c.i]); z.push(zz[c.i][c.j]+off); col.push(Math.min(1,c.w/wp95));
         txt.push('risalita al fondo <b>'+(c.w*100).toFixed(2)+' cm/s</b> &middot; fondo '+Math.abs(Math.round(zz[c.i][c.j]))+' m'); });
-      window.MLP.upwellCount=x.length; window.MLP.upwellWmax=wp95;
-      return [{type:'scatter3d',mode:'markers',x:x,y:y,z:z,name:'upwelling (w=u·∇h)',
-        marker:{size:3.5,color:col,colorscale:[[0,'rgba(255,214,74,0.4)'],[0.5,'rgba(255,140,26,0.85)'],[1,'rgba(255,45,45,1)']],cmin:0,cmax:1,showscale:false},
-        hovertext:txt,hoverinfo:'text'}];
+      lastUpwellCells=up.map(c=>({lat:lats[c.i],lon:lons[c.j],z:zz[c.i][c.j]+off,w:c.w}));   // per congelarle come scia allo step
+      window.MLP.upwellCount=x.length; window.MLP.upwellWmax=wp95; window.MLP.upwellTrails=upwellHistory.length;
+      const cur={type:'scatter3d',mode:'markers',x:x,y:y,z:z,name:'upwelling '+String(meteoMarine.time||'').slice(11,16),
+        marker:{size:3.8,color:col,colorscale:[[0,'rgba(255,214,74,0.5)'],[0.5,'rgba(255,140,26,0.9)'],[1,'rgba(255,45,45,1)']],cmin:0,cmax:1,showscale:false},
+        hovertext:txt,hoverinfo:'text'};
+      // Scie ore precedenti: ogni ora una tinta diversa (blu mattina -> rosso sera), semitrasparenti -> si vede l'upwelling migrare.
+      const trails=upwellHistory.map(h=>{ const hx=[],hy=[],hz=[]; h.cells.forEach(c=>{hx.push(c.lon);hy.push(c.lat);hz.push(c.z);});
+        return {type:'scatter3d',mode:'markers',x:hx,y:hy,z:hz,name:'scia '+h.hourISO.slice(11,16),showlegend:false,
+          marker:{size:2.6,color:'hsl('+Math.round(h.hue)+',90%,55%)',opacity:0.5},
+          hovertext:h.hourISO.slice(5,16).replace('T',' '),hoverinfo:'text'}; });
+      return [...trails, cur];
     }
     // Morfologia (base, senza corrente): 0.75*pendenza_norm + 0.25*convessita_norm, top ~12%.
     cells.forEach(c=>{ const s=Math.min(1,c.slope/(p95||1)), k=Math.min(1,Math.max(0,c.conv)/(cp95||1)); c.score=0.75*s+0.25*k; });
@@ -993,6 +1031,7 @@ try {
       : (_lc ? {up:_lc.up, center:{x:0,y:0,z:0}, eye:{x:_lc.eye.x-_lc.center.x, y:_lc.eye.y-_lc.center.y, z:_lc.eye.z-_lc.center.z}} : null);
     removeCurtains(g); window.MLP.decurtain=g._decurtain; window.MLP.decurtainEdge=g._decurtainEdge;   // togli le tende verticali artefatte (bordi inclusi) prima di costruire le superfici
     lastGrid=g; window.MLP.lastBBox=g.bb;   // memorizza griglia + bbox (per riprodurre l'area esatta in caso di artefatti: leggere MLP.lastBBox in console)
+    upwellHistory=[]; meteoSeries=null; lastUpwellCells=null;   // nuova zona -> azzera scie e serie meteo in cache
     const useTopo=(seabedStyle==='rotta');
     const gd = sectionMode ? makeLightGrid(g,200) : g;   // Sezione attiva -> superficie rada per il display
     const depthPos=gd.zz.map(r=>r.map(v=>v==null?null:Math.max(0,Math.round(-v))));
@@ -1222,11 +1261,13 @@ try {
   // Upwelling+ : morfologia modulata dalla corrente reale (Open-Meteo) all'ora scelta
   $('upwellAdvOn').onchange=()=>{ $('rowUpwellAdv').style.display=$('upwellAdvOn').checked?'flex':'none';
     if($('upwellAdvOn').checked){
-      if(!$('upwellDateTime').value){ const d=new Date(),pad=n=>String(n).padStart(2,'0'); $('upwellDateTime').value=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':00'; }
-      readout3dHint('Upwelling+: la morfologia e\' modulata dalla CORRENTE reale (dove la corrente risale la scarpata). Scegli data/ora.');
+      if(!$('upwellDateTime').value){ const d=new Date(),pad=n=>String(n).padStart(2,'0'); $('upwellDateTime').value=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T12:00'; }
+      readout3dHint('Upwelling+: la morfologia e\' modulata dalla CORRENTE reale. Usa +1h per vedere l\'upwelling cambiare nel tempo (scie colorate).');
       fetchMeteoMarine();
-    } else { meteoMarine=null; render3DScene(); } };
+    } else { meteoMarine=null; upwellHistory=[]; render3DScene(); } };
   $('upwellDateTime').onchange=()=>{ if($('upwellAdvOn').checked) fetchMeteoMarine(); };
+  $('upwellStepBtn').onclick=()=>upwellStep(1);
+  $('upwellClearBtn').onclick=()=>{ upwellHistory=[]; render3DScene(); };
   // Switch stile fondale: 'classic' (2 superfici mare/terra) <-> 'rotta' (superficie topografica unica con isolinee).
   // Ridisegna la stessa griglia gia' scaricata (nessun re-download).
   $('styleRotta').onchange=()=>{ seabedStyle=$('styleRotta').checked?'rotta':'classic';

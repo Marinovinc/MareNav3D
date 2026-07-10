@@ -1485,7 +1485,7 @@ try {
     if($('upwellAdvOn').checked){
       if(!$('upwellDateTime').value){ const d=new Date(),pad=n=>String(n).padStart(2,'0'); $('upwellDateTime').value=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T12:00'; }
       readout3dHint('Upwelling+: la morfologia e\' modulata dalla CORRENTE reale. Usa +1h per vedere l\'upwelling cambiare nel tempo (scie colorate).');
-      if($('currentOn')) $('currentOn').checked=true;   // mostra subito le frecce della corrente
+      if(!window._upwArrowsInit){ window._upwArrowsInit=true; if($('currentOn')) $('currentOn').checked=true; }   // mostra le frecce SOLO alla 1a attivazione (dopo rispetta la scelta utente)
       fetchMeteoMarine();
     } else { meteoMarine=null; upwellHistory=[]; render3DScene(); } };
   $('upwellDateTime').onchange=()=>{ if($('upwellAdvOn').checked) fetchMeteoMarine(); };
